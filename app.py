@@ -7,7 +7,7 @@ from io import StringIO
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("初期状態ではデータの項目名がそのまま右側の縦軸になります。必要に応じて簡単に軸を統合できます。")
+st.write("すべての縦軸を左側に配置しました。必要に応じて簡単に軸を統合できます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -60,37 +60,31 @@ if not df.empty:
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # ★★★ 新しい軸設定ロジック：統合チェックボックス ★★★
+        # 縦軸（Y軸）の配置設定
         st.subheader("縦軸（Y軸）の配置設定")
         
-        # 初期状態の軸リストは、選ばれたY軸のデータ名そのもの
         axis_names = list(y_axes) if y_axes else ["縦軸"]
         data_axis_mapping = {}
 
         if y_axes and len(y_axes) > 1:
-            # 2つ以上のデータが選ばれているときだけ統合オプションを出す
             is_integrated = st.checkbox("選択したデータの縦軸（名前）を1つに統合する")
             
             if is_integrated:
-                # 統合する場合：新しい名前を1つだけ聞く
                 integrated_name = st.text_input("統合後の縦軸の名前を入力してください（例：金額（円）、数値など）", value="統合された縦軸")
                 axis_names = [integrated_name]
                 
-                # すべてのデータをその統合軸（y2）に所属させる
                 for y_col in y_axes:
                     data_axis_mapping[y_col] = {
-                        "axis_id": "y2",
+                        "axis_id": "y2", # Plotlyの動的軸用ID
                         "axis_name": integrated_name
                     }
             else:
-                # 統合しない場合：最初は勝手にデータ名がそのままそれぞれの軸名になる（1対1）
                 for idx, y_col in enumerate(y_axes):
                     data_axis_mapping[y_col] = {
                         "axis_id": f"y{idx + 2}",
                         "axis_name": y_col
                     }
         else:
-            # 選択されたデータが1つだけ、または無しの場合はそのまま
             for idx, y_col in enumerate(y_axes):
                 data_axis_mapping[y_col] = {
                     "axis_id": f"y{idx + 2}",
@@ -154,22 +148,24 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # 共通レイアウト（左軸は非表示）
+            # 共通レイアウト（Plotlyの土台となる元々の第1軸は、スペース計算が狂いやすいため非表示にします）
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "yaxis": dict(visible=False),
                 "hovermode": "closest"
             }
 
-            # 決定された軸の数だけ、すべて右側（side='right'）に配置
+            # ★★★ 変更点：すべて左側（side='left'）へ配置 ★★★
+            # 複数の軸が重ならないように、左へ向かって位置(position)を外側にずらしていきます
             for ax_idx, name in enumerate(axis_names):
                 axis_id = f"y{ax_idx + 2}"
-                position_offset = 1.0 + (ax_idx * 0.08)
+                # 最初の軸は 0.0、2つ目の軸は -0.08、3つ目は -0.16... と左側に拡張
+                position_offset = 0.0 - (ax_idx * 0.08)
                 
                 layout_kwargs[f"yaxis{ax_idx + 2}"] = dict(
                     title=name,
                     overlaying="y",
-                    side="right",
+                    side="left",
                     anchor="free",
                     position=position_offset,
                     range=y_range_input
@@ -208,7 +204,8 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
 
-            layout_kwargs["margin"] = dict(r=80 * len(axis_names))
+            # 左側に軸が飛び出すため、グラフの左マージンを動的に広げて文字切れを防ぐ
+            layout_kwargs["margin"] = dict(l=80 * len(axis_names))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
 
