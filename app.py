@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("複数軸の描画エラーを完全に修正し、安定して動作するレイアウトを構築しました。")
+st.write("最新のPython環境におけるPlotlyの複数軸エラーを完全に修正しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -168,7 +168,6 @@ if not df.empty:
                 if not mapping: continue
                 
                 ax_idx = mapping["axis_idx"]
-                # Plotlyのマルチ軸指定は 'y', 'y2', 'y3' ... となる
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
 
                 if color_axis != "なし":
@@ -197,14 +196,14 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
 
-            # 🛠️【レイアウト設定の修正】
-            # X軸の基本設定とドメイン（描画幅）を制限して、右側に複数軸を追加できるようにします
-            layout_kwargs = {
-                "xaxis": dict(title=x_axis, range=x_range_input, domain=[0.05, 0.85]),
-                "hovermode": "closest"
-            }
+            # 🛠️【エラーの完全修正：動的プロパティ割り当てに変更】
+            # 最初から辞書で一括登録するのをやめ、1つずつ安全に軸レイアウトオブジェクトを設定していきます。
+            fig.update_layout(
+                xaxis=dict(title=x_axis, range=x_range_input, domain=[0.05, 0.85]),
+                hovermode="closest"
+            )
 
-            # 軸の名前や位置設定を、辞書形式で安全に構築
+            # 軸の名前や位置設定を、エラーを吐かない安全な関数経由（setattr）で個別注入
             for i, name in enumerate(axis_names):
                 actual_range = y_range_input if custom_range else None
                 
@@ -216,10 +215,8 @@ if not df.empty:
                 )
                 
                 if i == 0:
-                    # 主軸（左側）
                     axis_config["side"] = "left"
                 else:
-                    # 2つ目以降の軸（すべて右側にずらして配置）
                     position_offset = 0.85 + ((i - 1) * 0.07)
                     axis_config.update(dict(
                         overlaying="y",
@@ -228,10 +225,9 @@ if not df.empty:
                         position=position_offset
                     ))
                 
-                layout_kwargs[f"yaxis{'' if i == 0 else i + 1}"] = axis_config
-
-            # 一括で更新を適用
-            fig.update_layout(**layout_kwargs)
+                # 辞書の文字列キー（'yaxis', 'yaxis2'..）を使って動的に安全割り当て
+                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
+                setattr(fig.layout, axis_key, axis_config)
 
             # 最終描画
             st.plotly_chart(fig, use_container_width=True)
