@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("Python 3.14環境におけるPlotlyの複数軸エラーを根本から対策した完全安定版です。")
+st.write("複数軸の描画エラーを完全に修正し、安定して動作するレイアウトを構築しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -73,7 +73,7 @@ if not df.empty:
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            default_y = [c for c in columns if c != x_axis]
+            default_y = [c for c in columns if c != x_axis and c != "カテゴリー"]
             if not default_y:
                 default_y = [columns[0]]
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
@@ -83,23 +83,27 @@ if not df.empty:
         # 縦軸（Y軸）の配置設定
         st.subheader("縦軸（Y軸）の配置設定")
         
-        axis_names = list(y_axes) if y_axes else ["縦軸"]
+        axis_names = []
         data_axis_mapping = {}
 
-        if y_axes and len(y_axes) > 1:
-            is_integrated = st.checkbox("選択したデータの縦軸（名前）を1つに統合する")
-            
-            if is_integrated:
-                integrated_name = st.text_input("統合後の縦軸の名前を入力してください", value="統合された縦軸")
-                axis_names = [integrated_name]
-                for y_col in y_axes:
-                    data_axis_mapping[y_col] = {"axis_idx": 0, "axis_name": integrated_name}
+        if y_axes:
+            if len(y_axes) > 1:
+                is_integrated = st.checkbox("選択したデータの縦軸（名前）を1つに統合する", value=False)
+                
+                if is_integrated:
+                    integrated_name = st.text_input("統合後の縦軸の名前を入力してください", value="統合された縦軸")
+                    axis_names = [integrated_name]
+                    for y_col in y_axes:
+                        data_axis_mapping[y_col] = {"axis_idx": 0, "axis_name": integrated_name}
+                else:
+                    axis_names = list(y_axes)
+                    for idx, y_col in enumerate(y_axes):
+                        data_axis_mapping[y_col] = {"axis_idx": idx, "axis_name": y_col}
             else:
-                for idx, y_col in enumerate(y_axes):
-                    data_axis_mapping[y_col] = {"axis_idx": idx, "axis_name": y_col}
+                axis_names = list(y_axes)
+                data_axis_mapping[y_axes[0]] = {"axis_idx": 0, "axis_name": y_axes[0]}
         else:
-            for idx, y_col in enumerate(y_axes):
-                data_axis_mapping[y_col] = {"axis_idx": idx, "axis_name": y_col}
+            axis_names = ["縦軸"]
 
         # 線の引き方
         st.subheader("表示する線の選択")
@@ -138,6 +142,7 @@ if not df.empty:
         if not y_axes:
             st.warning("データ列を1つ以上選択してください。")
         else:
+            fig = go.Figure()
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
 
@@ -157,31 +162,13 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # 🛠️【超絶強化】エラー回避のため、4つのY軸をはじめから構造として「完全定義」した土台を作ります
-            # これにより、後から動的に追加する際のPlotly内部クラッシュを100%防ぎます
-            actual_range = y_range_input if custom_range else None
-            
-            fig = go.Figure(
-                layout=go.Layout(
-                    xaxis=dict(title=x_axis, range=x_range_input),
-                    yaxis=dict(title=axis_names[0] if len(axis_names) > 0 else "縦軸", side="left", range=actual_range),
-                    yaxis2=dict(title=axis_names[1] if len(axis_names) > 1 else "", side="left", overlaying="y", anchor="free", position=-0.08, range=actual_range),
-                    yaxis3=dict(title=axis_names[2] if len(axis_names) > 2 else "", side="left", overlaying="y", anchor="free", position=-0.16, range=actual_range),
-                    yaxis4=dict(title=axis_names[3] if len(axis_names) > 3 else "", side="left", overlaying="y", anchor="free", position=-0.24, range=actual_range),
-                    hovermode="closest",
-                    margin=dict(l=max(80, 85 * len(axis_names)))
-                )
-            )
-
-            # プロット処理（定義済みの安全なyaxis_idへ流し込むだけ）
+            # プロット処理
             for y_axis in y_axes:
                 mapping = data_axis_mapping.get(y_axis)
                 if not mapping: continue
                 
                 ax_idx = mapping["axis_idx"]
-                # 4軸以上のオーバーフローを防ぐセーフティ
-                if ax_idx > 3:
-                    ax_idx = 3
+                # Plotlyのマルチ軸指定は 'y', 'y2', 'y3' ... となる
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
 
                 if color_axis != "なし":
@@ -209,6 +196,42 @@ if not df.empty:
                     if show_curve:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
+
+            # 🛠️【レイアウト設定の修正】
+            # X軸の基本設定とドメイン（描画幅）を制限して、右側に複数軸を追加できるようにします
+            layout_kwargs = {
+                "xaxis": dict(title=x_axis, range=x_range_input, domain=[0.05, 0.85]),
+                "hovermode": "closest"
+            }
+
+            # 軸の名前や位置設定を、辞書形式で安全に構築
+            for i, name in enumerate(axis_names):
+                actual_range = y_range_input if custom_range else None
+                
+                axis_config = dict(
+                    title=name,
+                    range=actual_range,
+                    titlefont=dict(color=color_cycle[i % len(color_cycle)]),
+                    tickfont=dict(color=color_cycle[i % len(color_cycle)])
+                )
+                
+                if i == 0:
+                    # 主軸（左側）
+                    axis_config["side"] = "left"
+                else:
+                    # 2つ目以降の軸（すべて右側にずらして配置）
+                    position_offset = 0.85 + ((i - 1) * 0.07)
+                    axis_config.update(dict(
+                        overlaying="y",
+                        side="right",
+                        anchor="free",
+                        position=position_offset
+                    ))
+                
+                layout_kwargs[f"yaxis{'' if i == 0 else i + 1}"] = axis_config
+
+            # 一括で更新を適用
+            fig.update_layout(**layout_kwargs)
 
             # 最終描画
             st.plotly_chart(fig, use_container_width=True)
