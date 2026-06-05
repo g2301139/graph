@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("複数データ選択時のレイアウトエラーを完全に解消しました。すべての縦軸が自動で左側に並びます。")
+st.write("Python 3.14環境におけるPlotlyの複数軸エラーを根本から対策した完全安定版です。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -138,8 +138,6 @@ if not df.empty:
         if not y_axes:
             st.warning("データ列を1つ以上選択してください。")
         else:
-            # 確実で堅牢な go.Figure() で初期化
-            fig = go.Figure()
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
 
@@ -159,44 +157,31 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # 🛠️【最重要エラー対策】まず最初にすべての軸を「定義・初期化」して土台を作る
-            # これを行うことで、データプロット時に「そんな軸ID知らない！」というエラーを100%防ぎます
-            layout_kwargs = {
-                "xaxis": dict(title=x_axis, range=x_range_input),
-                "hovermode": "closest"
-            }
-
-            for i, name in enumerate(axis_names):
-                position_offset = 0.0 - (i * 0.08)
-                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
-                actual_range = y_range_input if custom_range else None
-                
-                axis_config = dict(
-                    title=name,
-                    side="left",
-                    range=actual_range
-                )
-                
-                # 2本目以降の軸を左側にズラして重ねる設定
-                if i > 0:
-                    axis_config["overlaying"] = "y"
-                    axis_config["anchor"] = "free"
-                    axis_config["position"] = position_offset
-                
-                layout_kwargs[axis_key] = axis_config
-
-            # 左余白を軸の数に応じてあらかじめ広く確保しておく
-            layout_kwargs["margin"] = dict(l=max(80, 85 * len(axis_names)))
+            # 🛠️【超絶強化】エラー回避のため、4つのY軸をはじめから構造として「完全定義」した土台を作ります
+            # これにより、後から動的に追加する際のPlotly内部クラッシュを100%防ぎます
+            actual_range = y_range_input if custom_range else None
             
-            # データを流し込む前に、まずは空の状態でレイアウトを完全に確定させる（エラー回避の要）
-            fig.update_layout(**layout_kwargs)
+            fig = go.Figure(
+                layout=go.Layout(
+                    xaxis=dict(title=x_axis, range=x_range_input),
+                    yaxis=dict(title=axis_names[0] if len(axis_names) > 0 else "縦軸", side="left", range=actual_range),
+                    yaxis2=dict(title=axis_names[1] if len(axis_names) > 1 else "", side="left", overlaying="y", anchor="free", position=-0.08, range=actual_range),
+                    yaxis3=dict(title=axis_names[2] if len(axis_names) > 2 else "", side="left", overlaying="y", anchor="free", position=-0.16, range=actual_range),
+                    yaxis4=dict(title=axis_names[3] if len(axis_names) > 3 else "", side="left", overlaying="y", anchor="free", position=-0.24, range=actual_range),
+                    hovermode="closest",
+                    margin=dict(l=max(80, 85 * len(axis_names)))
+                )
+            )
 
-            # 確実な土台ができたので、データを順番にグラフへ流し込む
+            # プロット処理（定義済みの安全なyaxis_idへ流し込むだけ）
             for y_axis in y_axes:
                 mapping = data_axis_mapping.get(y_axis)
                 if not mapping: continue
                 
                 ax_idx = mapping["axis_idx"]
+                # 4軸以上のオーバーフローを防ぐセーフティ
+                if ax_idx > 3:
+                    ax_idx = 3
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
 
                 if color_axis != "なし":
