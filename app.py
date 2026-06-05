@@ -7,7 +7,7 @@ from io import StringIO
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("貼り付けたデータから軸の名前と数を自動で作成します。必要に応じて後から自由に変更可能です。")
+st.write("初期状態ではデータの項目名がそのまま右側の縦軸になります。必要に応じて簡単に軸を統合できます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -55,51 +55,47 @@ if not df.empty:
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            default_y = [columns[1]] if len(columns) > 1 else [columns[0]]
+            default_y = [columns[1], columns[2]] if len(columns) > 2 else [columns[1]]
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # ★★★ 改良：初期状態では自動で軸名を推測・作成する仕組み ★★★
-        st.subheader("縦軸（名前）のカスタマイズ")
+        # ★★★ 新しい軸設定ロジック：統合チェックボックス ★★★
+        st.subheader("縦軸（Y軸）の配置設定")
         
-        # 最初は、選んだデータの種類に合わせて軸の数を自動決定
-        default_num_axes = len(y_axes) if y_axes else 1
-        num_custom_axes = st.number_input("用意する縦軸（名前）の数", min_value=1, max_value=5, value=default_num_axes)
-        
-        axis_names = []
-        st.write("縦軸の名前（最初は自動で設定されています。自由に変更可能です）：")
-        ax_cols = st.columns(max(1, int(num_custom_axes)))
-        
-        for idx in range(int(num_custom_axes)):
-            with ax_cols[idx]:
-                # 初期値として、選んだデータの列名をそのまま軸名として「勝手に」採用します
-                if idx < len(y_axes):
-                    default_name = y_axes[idx]
-                else:
-                    default_name = f"カスタム軸 {idx+1}"
-                
-                ax_name = st.text_input(f"縦軸 {idx+1} の名前", value=default_name, key=f"ax_name_input_{idx}")
-                axis_names.append(ax_name)
-
-        # データの所属軸設定（これも初期状態は自動で1対1にマッピング）
-        st.subheader("データの所属軸設定")
-        st.write("各データを、上で作ったどの縦軸にまとめますか？")
-        
+        # 初期状態の軸リストは、選ばれたY軸のデータ名そのもの
+        axis_names = list(y_axes) if y_axes else ["縦軸"]
         data_axis_mapping = {}
-        if y_axes:
-            mapping_cols = st.columns(len(y_axes))
-            for idx, y_col in enumerate(y_axes):
-                with mapping_cols[idx]:
-                    # 初期状態の選択肢を賢く自動選択（軸名リストの中に、自身のデータ名があればそれをデフォルトに）
-                    default_axis_index = idx if idx < len(axis_names) else 0
-                    assigned_axis = st.selectbox(f"「{y_col}」の縦軸", options=axis_names, index=default_axis_index, key=f"map_{y_col}")
-                    
-                    axis_index = axis_names.index(assigned_axis)
+
+        if y_axes and len(y_axes) > 1:
+            # 2つ以上のデータが選ばれているときだけ統合オプションを出す
+            is_integrated = st.checkbox("選択したデータの縦軸（名前）を1つに統合する")
+            
+            if is_integrated:
+                # 統合する場合：新しい名前を1つだけ聞く
+                integrated_name = st.text_input("統合後の縦軸の名前を入力してください（例：金額（円）、数値など）", value="統合された縦軸")
+                axis_names = [integrated_name]
+                
+                # すべてのデータをその統合軸（y2）に所属させる
+                for y_col in y_axes:
                     data_axis_mapping[y_col] = {
-                        "axis_id": f"y{axis_index + 2}",
-                        "axis_name": assigned_axis
+                        "axis_id": "y2",
+                        "axis_name": integrated_name
                     }
+            else:
+                # 統合しない場合：最初は勝手にデータ名がそのままそれぞれの軸名になる（1対1）
+                for idx, y_col in enumerate(y_axes):
+                    data_axis_mapping[y_col] = {
+                        "axis_id": f"y{idx + 2}",
+                        "axis_name": y_col
+                    }
+        else:
+            # 選択されたデータが1つだけ、または無しの場合はそのまま
+            for idx, y_col in enumerate(y_axes):
+                data_axis_mapping[y_col] = {
+                    "axis_id": f"y{idx + 2}",
+                    "axis_name": y_col
+                }
 
         # 線の引き方
         st.subheader("表示する線の選択")
@@ -158,12 +154,14 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
+            # 共通レイアウト（左軸は非表示）
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "yaxis": dict(visible=False),
                 "hovermode": "closest"
             }
 
+            # 決定された軸の数だけ、すべて右側（side='right'）に配置
             for ax_idx, name in enumerate(axis_names):
                 axis_id = f"y{ax_idx + 2}"
                 position_offset = 1.0 + (ax_idx * 0.08)
@@ -177,6 +175,7 @@ if not df.empty:
                     range=y_range_input
                 )
 
+            # プロット処理
             for y_axis in y_axes:
                 mapping = data_axis_mapping.get(y_axis)
                 if not mapping: continue
@@ -209,7 +208,7 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
 
-            layout_kwargs["margin"] = dict(r=80 * num_custom_axes)
+            layout_kwargs["margin"] = dict(r=80 * len(axis_names))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
 
