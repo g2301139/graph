@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("軸ごとの個別範囲設定、左側への複数軸配置、データごとの線種選択に完全対応しました。")
+st.write("左側複数軸の見やすさ（文字の重なり・色）を改善しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -106,16 +106,14 @@ if not df.empty:
         else:
             axis_names = ["縦軸"]
 
-        # 🛠️【データごとの線の引き方設定】
+        # データごとの線の引き方設定
         st.subheader("表示する線の選択")
-        line_styles_config = {}  # 各データ列の線種設定を保存する辞書
+        line_styles_config = {}
         
         if y_axes:
-            # 2カラムに分けてすっきり配置
             style_cols = st.columns(2)
             for idx, y_col in enumerate(y_axes):
                 with style_cols[idx % 2]:
-                    # プロットするデータごとにセレクトボックスで選択
                     line_style = st.selectbox(
                         f"「{y_col}」の線の引き方",
                         options=["マーカーのみ（線なし）", "数値を自動判定した線（曲線）", "全体の平均を通る一直線（トレンド線）"],
@@ -124,7 +122,7 @@ if not df.empty:
                     )
                     line_styles_config[y_col] = line_style
 
-        # 軸の最大値・最小値設定（軸ごとに動的生成）
+        # 軸の最大値・最小値設定
         st.subheader("軸の表示範囲設定")
         custom_range = st.checkbox("手動で軸の最大値・最小値を指定する")
         
@@ -196,8 +194,6 @@ if not df.empty:
                 
                 ax_idx = mapping["axis_idx"]
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
-                
-                # このデータ列に指定された線種の設定を取得
                 selected_style = line_styles_config.get(y_axis, "数値を自動判定した線（曲線）")
 
                 if color_axis != "なし":
@@ -207,16 +203,13 @@ if not df.empty:
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
                         
-                        # ベースとなる点プロット
                         fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=f"{y_axis} ({cat})", yaxis=yaxis_id))
                         
-                        # 直線の実線プロット
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
                             if x_t is not None: 
                                 fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{y_axis} ({cat}) [直線]", yaxis=yaxis_id))
                         
-                        # 曲線プロット
                         elif selected_style == "数値を自動判定した線（曲線）":
                             shape_type = determine_shape(sub_df, x_axis, y_axis)
                             fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} ({cat}) [曲線]", yaxis=yaxis_id))
@@ -235,28 +228,34 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [曲線]", yaxis=yaxis_id))
 
-            # 左側に複数軸を並べるためのドメイン計算
-            xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
+            # 🛠️ 左軸が重ならないよう、1軸ごとに「0.09」の間隔を確保（マージン幅を最適化）
+            xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.09)
 
             update_args = {
-                "xaxis": dict(title=dict(text=x_axis), range=x_range_input, domain=[xaxis_start_domain, 1.0]),
+                "xaxis": dict(
+                    title=dict(text=x_axis, font=dict(color="black")), 
+                    range=x_range_input, 
+                    domain=[xaxis_start_domain, 1.0],
+                    tickfont=dict(color="black")
+                ),
                 "hovermode": "closest"
             }
 
             # 各軸のレイアウトを構築
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
-                axis_color = color_cycle[i % len(color_cycle)]
                 
+                # 🛠️ 軸名、軸数値の色を「black（黒）」に統一し、standoff（文字の間隔）を20に設定して被りを防止
                 axis_config = dict(
-                    title=dict(text=name, font=dict(color=axis_color)),
+                    title=dict(text=name, font=dict(color="black"), standoff=20),
                     range=actual_range,
-                    tickfont=dict(color=axis_color),
+                    tickfont=dict(color="black"),
                     side="left"
                 )
                 
                 if i > 0:
-                    position_offset = xaxis_start_domain - (i * 0.08)
+                    # 🛠️ 2個目以降の軸の左ズラし幅を「0.09」に均等に広げ、名前と数値が重ならないように修正
+                    position_offset = xaxis_start_domain - (i * 0.09)
                     axis_config.update(dict(
                         overlaying="y",
                         anchor="free",
