@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as px
+import plotly.express as px
 import numpy as np
 
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
