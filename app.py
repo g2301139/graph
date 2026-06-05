@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("不具合の原因を完全に修正しました。コピペしたデータが自動的に個別の左縦軸になります。")
+st.write("起動時のエラーを完全に修正しました。コピペしたデータに合わせて、自動で左側に縦軸が並びます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -35,11 +35,11 @@ df = pd.DataFrame()
 
 if paste_input.strip():
     try:
-        # あらゆる空白・タブ・全角スペースをタブ「\t」に一発変換して列を切り分ける
         lines = paste_input.strip().split('\n')
         processed_lines = []
         for line in lines:
             if ',' not in line:
+                # すべての連続する空白（全角・半角スペース・タブ）を1つのタブに統一
                 line = re.sub(r'[\t\s ]+', '\t', line)
             processed_lines.append(line)
         
@@ -77,7 +77,7 @@ if not df.empty:
             default_y = [c for c in columns if c != x_axis]
             if not default_y:
                 default_y = [columns[0]]
-            y_axes = st.multiselect("グラフに描画する data 列を選択（複数選択可）", options=columns, default=default_y)
+            y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
@@ -139,7 +139,6 @@ if not df.empty:
         if not y_axes:
             st.warning("データ列を1つ以上選択してください。")
         else:
-            # ★ 確実にバグが起きない go.Figure() を土台に使用
             fig = go.Figure()
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
@@ -165,7 +164,6 @@ if not df.empty:
                 mapping = data_axis_mapping.get(y_axis)
                 if not mapping: continue
                 
-                # Plotly用の軸名 (yaxis, yaxis2, yaxis3...)
                 ax_idx = mapping["axis_idx"]
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
 
@@ -195,13 +193,13 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
 
-            # 軸のレイアウト定義を設定
+            # 軸のレイアウト定義
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "hovermode": "closest"
             }
 
-            # すべての登録された軸名を「左側」へ、重ならないようにずらして配置
+            # すべての軸を完全に「左側」へ重ねずにずらして配置
             for i, name in enumerate(axis_names):
                 position_offset = 0.0 - (i * 0.08)
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
@@ -215,8 +213,8 @@ if not df.empty:
                     range=y_range_input
                 )
 
-            # 左余白を軸の数に応じて広く取る
-            layout_kwargs["margin"] = dict(l=80 * len(axis_names))
+            # 左側の文字が切れないように、軸の数に合わせて余白を確保
+            layout_kwargs["margin"] = dict(l=max(80, 80 * len(axis_names)))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
 
