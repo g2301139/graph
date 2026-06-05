@@ -7,24 +7,23 @@ from io import StringIO
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("Excelやスプレッドシートからデータを**コピーして貼り付けるだけ**で、自動で自由なグラフを作成・保存できます。")
+st.write("Excelやスプレッドシートからデータを**コピーして貼り付けるだけ**で、トレンド線や複数軸のグラフを自動作成できます。")
 
 # -----------------------------------------------------------------------------
-# 1. データ入力セクション（テキストエリアへの一括コピペ対応）
+# 1. データ入力セクション
 # -----------------------------------------------------------------------------
 st.header("1. データの入力")
 
-# 初期データ（サンプル）をタブ区切りテキスト形式で用意
+# 初期データ（ばらつきのあるサンプルデータ）
 default_paste_data = (
     "X軸データ\t売上\t利益\tカテゴリー\n"
     "1\t10\t2\tA\n"
-    "2\t15\t5\tB\n"
-    "3\t7\t1\tA\n"
-    "4\t22\t8\tB\n"
-    "5\t18\t4\tA"
+    "2\t12\t5\tB\n"
+    "3\t18\t4\tA\n"
+    "4\t20\t8\tB\n"
+    "5\t26\t7\tA"
 )
 
-# ユーザーがコピペするためのテキストエリア
 paste_input = st.text_area(
     "Excelやスプレッドシートからデータをコピーし、下の枠内に貼り付けてください（Ctrl+V）：",
     value=default_paste_data,
@@ -32,20 +31,15 @@ paste_input = st.text_area(
     help="一番上の行がヘッダー（列名）になります。"
 )
 
-# 貼り付けられたテキストをデータフレームに変換
 try:
-    # Excelのコピペは通常タブ区切り (\t) になります
     df = pd.read_csv(StringIO(paste_input), sep='\t')
-    
-    # もしカンマ区切りの場合はカンマで再読み込みを試みる
     if len(df.columns) == 1 and ',' in paste_input:
         df = pd.read_csv(StringIO(paste_input), sep=',')
         
     st.subheader("現在のデータ確認")
     st.dataframe(df, use_container_width=True)
-
 except Exception as e:
-    st.error(f"データの読み込みに失敗しました。形式を確認してください。エラー: {e}")
+    st.error(f"データの読み込みに失敗しました。エラー: {e}")
     df = pd.DataFrame()
 
 # -----------------------------------------------------------------------------
@@ -62,20 +56,20 @@ if not df.empty:
         
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
-        
         with col2:
-            # 複数軸・複数選択に対応
             y_axes = st.multiselect("Y軸（縦軸）を選択 ※複数選択可能", options=columns, default=[columns[1]])
-            
         with col3:
-            # 色分け（オプション）
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 直線・曲線の自動判定オプション
+        # 線の引き方の選択肢をアップデート
         st.subheader("線のスタイルの設定")
         line_mode = st.radio(
             "線の引き方",
-            options=["数値をみて自動判定（直線か曲線か）", "点（マーカー）のみ", "常に直線で繋ぐ", "常に滑らかな曲線で繋ぐ"],
+            options=[
+                "全体の平均を通る一直線（回帰直線／トレンドライン）", 
+                "数値をみて自動判定（各点を通る直線か曲線か）", 
+                "点（マーカー）のみ"
+            ],
             index=0
         )
 
@@ -87,75 +81,83 @@ if not df.empty:
         if not y_axes:
             st.warning("Y軸を1つ以上選択してください。")
         else:
-            fig = px.line() # ベースの作成
+            # 描画用のベースフィギュア
+            fig = px.line()
+            use_secondary_y = len(y_axes) > 1
 
-            # 数値の並びから直線/曲線を自動判定するロジック
+            # 最小二乗法で「平均的な一直線」のデータを計算する関数
+            def get_trendline_data(dataframe, x_col, y_col):
+                try:
+                    x_vals = pd.to_numeric(dataframe[x_col]).values
+                    y_vals = pd.to_numeric(dataframe[y_col]).values
+                    # 一次関数 (y = ax + b) の係数を計算
+                    idx = np.isfinite(x_vals) & np.isfinite(y_vals)
+                    a, b = np.polyfit(x_vals[idx], y_vals[idx], 1)
+                    
+                    # 直線を描くための端と端の点を返す
+                    x_trend = np.array([min(x_vals), max(x_vals)])
+                    y_trend = a * x_trend + b
+                    return x_trend, y_trend
+                except:
+                    return None, None
+
+            # 自動判定ロジック
             def determine_shape(dataframe, x, y):
                 try:
                     x_val = pd.to_numeric(dataframe[x]).values
                     y_val = pd.to_numeric(dataframe[y]).values
-                    if len(x_val) < 3:
-                        return "linear"
+                    if len(x_val) < 3: return "linear"
                     slopes = np.diff(y_val) / np.diff(x_val)
-                    slope_variance = np.var(np.diff(slopes))
-                    return "linear" if slope_variance < 1e-5 else "spline"
+                    return "linear" if np.var(np.diff(slopes)) < 1e-5 else "spline"
                 except:
                     return "linear"
 
-            # 線の種類を決定
-            if line_mode == "数値をみて自動判定（直線か曲線か）":
-                shape_type = determine_shape(df, x_axis, y_axes[0])
-                st.info(f"💡 データの数値を解析し、現在は **「{'直線' if shape_type == 'linear' else '曲線（スプライン）'}」** が適していると判断しました。")
-                line_dict = dict(shape=shape_type)
-                render_mode = "lines+markers"
-            elif line_mode == "点（マーカー）のみ":
-                line_dict = dict()
-                render_mode = "markers"
-            elif line_mode == "常に直線で繋ぐ":
-                line_dict = dict(shape="linear")
-                render_mode = "lines+markers"
-            else:
-                line_dict = dict(shape="spline")
-                render_mode = "lines+markers"
-
-            # 複数軸の処理（2軸対応）
-            use_secondary_y = len(y_axes) > 1
-            
-            # 各Y軸データを追加
+            # 選択されたすべてのY軸をプロット
             for i, y_axis in enumerate(y_axes):
+                yaxis_target = "y2" if (use_secondary_y and i > 0) else "y"
+
                 if color_axis != "なし":
                     unique_categories = df[color_axis].unique()
                     for cat in unique_categories:
                         sub_df = df[df[color_axis] == cat]
                         
-                        # Plotly Expressのオブジェクトを代用して、確実なデータプロットを作成
-                        temp_fig = px.scatter(sub_df, x=x_axis, y=y_axis, text=None)
-                        if render_mode != "markers":
-                            temp_fig.update_traces(mode=render_mode, line=line_dict)
-                        else:
-                            temp_fig.update_traces(mode="markers")
+                        # 1. まず「実際の点（マーカー）」をしっかりプロット
+                        fig.add_scatter(
+                            x=sub_df[x_axis], y=sub_df[y_axis],
+                            mode="markers",
+                            marker=dict(size=10),
+                            name=f"{y_axis} ({cat}) - 実測値",
+                            yaxis=yaxis_target
+                        )
                         
-                        trace = temp_fig.data[0]
-                        trace.name = f"{y_axis} ({cat})"
-                        trace.marker.size = 10  # しっかり点を取る
-                        if use_secondary_y and i > 0:
-                            trace.yaxis = "y2"
-                        fig.add_trace(trace)
+                        # 2. 設定に合わせて線を引く
+                        if line_mode == "全体の平均を通る一直線（回帰直線／トレンドライン）":
+                            x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
+                            if x_t is not None:
+                                fig.add_scatter(x=x_t, y=y_t, mode="lines", name=f"{y_axis} ({cat}) - トレンド線", yaxis=yaxis_target)
+                        elif line_mode == "数値をみて自動判定（各点を通る直線か曲線か）":
+                            shape_type = determine_shape(sub_df, x_axis, y_axis)
+                            fig.add_scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type), name=f"{y_axis} ({cat}) - 軌跡", yaxis=yaxis_target)
+                
                 else:
-                    temp_fig = px.scatter(df, x=x_axis, y=y_axis, text=None)
-                    if render_mode != "markers":
-                        temp_fig.update_traces(mode=render_mode, line=line_dict)
-                    else:
-                        temp_fig.update_traces(mode="markers")
+                    # 色分けなしの場合
+                    fig.add_scatter(
+                        x=df[x_axis], y=df[y_axis],
+                        mode="markers",
+                        marker=dict(size=10),
+                        name=f"{y_axis} - 実測値",
+                        yaxis=yaxis_target
+                    )
                     
-                    trace = temp_fig.data[0]
-                    trace.name = y_axis
-                    trace.marker.size = 10  # しっかり点を取る
-                    if use_secondary_y and i > 0:
-                        trace.yaxis = "y2"
-                    fig.add_trace(trace)
+                    if line_mode == "全体の平均を通る一直線（回帰直線／トレンドライン）":
+                        x_t, y_t = get_trendline_data(df, x_axis, y_axis)
+                        if x_t is not None:
+                            fig.add_scatter(x=x_t, y=y_t, mode="lines", name=f"{y_axis} - トレンド線", yaxis=yaxis_target)
+                    elif line_mode == "数値をみて自動判定（各点を通る直線か曲線か）":
+                        shape_type = determine_shape(df, x_axis, y_axis)
+                        fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type), name=f"{y_axis} - 軌跡", yaxis=yaxis_target)
 
-            # 2軸レイアウトの適用
+            # レイアウト設定
             layout_kwargs = {
                 "xaxis": dict(title=x_axis),
                 "yaxis": dict(title=y_axes[0]),
@@ -168,22 +170,11 @@ if not df.empty:
                     side="right"
                 )
             fig.update_layout(**layout_kwargs)
-
-            # グラフを表示
             st.plotly_chart(fig, use_container_width=True)
 
             # -----------------------------------------------------------------------------
             # 4. ファイル保存セクション
             # -----------------------------------------------------------------------------
             st.header("4. データの保存")
-            col_dl1, col_dl2 = st.columns(2)
-            with col_dl1:
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 入力データをCSVで保存",
-                    data=csv,
-                    file_name="graph_data.csv",
-                    mime="text/csv",
-                )
-            with col_dl2:
-                st.caption("💡 グラフ自体を画像として保存したい場合は、グラフ右上にあるカメラマーク（カメラの形をしたアイコン）をクリックすると、一発でPNG画像としてダウンロードできます。")
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(label="📥 入力データをCSVで保存", data=csv, file_name="graph_data.csv", mime="text/csv")
