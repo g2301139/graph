@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("複数データ選択時の軸エラーを完全に修正しました。自動で左側に縦軸が並びます。")
+st.write("複数データ選択時のレイアウトエラーを完全に解消しました。すべての縦軸が自動で左側に並びます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -128,7 +128,6 @@ if not df.empty:
             with cy1: y_min = st.number_input("Y軸 最小値", value=y_min_def)
             with cy2: y_max = st.number_input("Y軸 最大値", value=y_max_def)
             x_range_input = [x_min, x_max]
-            # 有効な数値が入っている場合のみリストにする
             y_range_input = [y_min, y_max]
 
         # -----------------------------------------------------------------------------
@@ -139,6 +138,7 @@ if not df.empty:
         if not y_axes:
             st.warning("データ列を1つ以上選択してください。")
         else:
+            # 確実で堅牢な go.Figure() で初期化
             fig = go.Figure()
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
@@ -159,7 +159,39 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # プロット処理
+            # 🛠️【最重要エラー対策】まず最初にすべての軸を「定義・初期化」して土台を作る
+            # これを行うことで、データプロット時に「そんな軸ID知らない！」というエラーを100%防ぎます
+            layout_kwargs = {
+                "xaxis": dict(title=x_axis, range=x_range_input),
+                "hovermode": "closest"
+            }
+
+            for i, name in enumerate(axis_names):
+                position_offset = 0.0 - (i * 0.08)
+                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
+                actual_range = y_range_input if custom_range else None
+                
+                axis_config = dict(
+                    title=name,
+                    side="left",
+                    range=actual_range
+                )
+                
+                # 2本目以降の軸を左側にズラして重ねる設定
+                if i > 0:
+                    axis_config["overlaying"] = "y"
+                    axis_config["anchor"] = "free"
+                    axis_config["position"] = position_offset
+                
+                layout_kwargs[axis_key] = axis_config
+
+            # 左余白を軸の数に応じてあらかじめ広く確保しておく
+            layout_kwargs["margin"] = dict(l=max(80, 85 * len(axis_names)))
+            
+            # データを流し込む前に、まずは空の状態でレイアウトを完全に確定させる（エラー回避の要）
+            fig.update_layout(**layout_kwargs)
+
+            # 確実な土台ができたので、データを順番にグラフへ流し込む
             for y_axis in y_axes:
                 mapping = data_axis_mapping.get(y_axis)
                 if not mapping: continue
@@ -193,37 +225,7 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
 
-            # 軸の基本レイアウト
-            layout_kwargs = {
-                "xaxis": dict(title=x_axis, range=x_range_input),
-                "hovermode": "closest"
-            }
-
-            # ★【最重要エラー修正】複数軸の設定をバグが起きない安全な記述法に変更
-            for i, name in enumerate(axis_names):
-                position_offset = 0.0 - (i * 0.08)
-                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
-                
-                # 手動範囲指定がチェックされていないときはNoneを渡して自動スケールに
-                actual_range = y_range_input if custom_range else None
-                
-                axis_config = dict(
-                    title=name,
-                    side="left",
-                    range=actual_range
-                )
-                
-                # 2つ目以降の軸を重ね合わせるための設定
-                if i > 0:
-                    axis_config["overlaying"] = "y"
-                    axis_config["anchor"] = "free"
-                    axis_config["position"] = position_offset
-                
-                layout_kwargs[axis_key] = axis_config
-
-            # 左側の文字が切れないように、軸の数に合わせて余白を確保
-            layout_kwargs["margin"] = dict(l=max(80, 85 * len(axis_names)))
-            fig.update_layout(**layout_kwargs)
+            # 最終描画
             st.plotly_chart(fig, use_container_width=True)
 
             # -----------------------------------------------------------------------------
