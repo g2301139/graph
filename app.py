@@ -35,7 +35,8 @@ try:
         df = pd.read_csv(StringIO(paste_input), sep=',')
         
     st.subheader("現在のデータ確認")
-    st.dataframe(df, use_container_width=True)
+    # ★ hide_index=True を指定することで、左側の 0, 1, 2... という行番号を非表示にしました
+    st.dataframe(df, use_container_width=True, hide_index=True)
 except Exception as e:
     st.error(f"データの読み込みに失敗しました。エラー: {e}")
     df = pd.DataFrame()
@@ -55,18 +56,16 @@ if not df.empty:
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            # ここでは純粋にグラフに描画したいデータ（列）をすべて選びます
-            y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=[columns[1], columns[2]])
+            # ★ 安全対策：初期選択(default)を固定インデックスではなく、安全に存在する列から選ぶように修正
+            default_y = [columns[1]] if len(columns) > 1 else [columns[0]]
+            y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 縦軸の名前の設定（自由な数で作成可能）
+        # 縦軸の名前の設定
         st.subheader("縦軸（名前）のカスタマイズ")
-        
-        # ユーザーが作りたい「軸の名前の数」を指定
         num_custom_axes = st.number_input("用意する縦軸（名前）の数", min_value=1, max_value=5, value=1)
         
-        # 各軸の名前を入力してもらう
         axis_names = []
         st.write("縦軸の名前を決めてください（右側からこの順番で並びます）：")
         ax_cols = st.columns(int(num_custom_axes))
@@ -76,22 +75,20 @@ if not df.empty:
                 ax_name = st.text_input(f"縦軸 {idx+1} の名前", value=default_name, key=f"ax_name_input_{idx}")
                 axis_names.append(ax_name)
 
-        # ★★★ ここがポイント：選んだデータそれぞれを、どの「軸の名前」に所属させるか選ぶ ★★★
         st.subheader("データの所属軸設定")
         st.write("各データを、上で作ったどの縦軸にまとめますか？")
         
         data_axis_mapping = {}
-        mapping_cols = st.columns(len(y_axes)) if y_axes else []
-        for idx, y_col in enumerate(y_axes):
-            with mapping_cols[idx]:
-                # ユーザーが作った軸の名前を選択肢にする
-                assigned_axis = st.selectbox(f"「{y_col}」の縦軸", options=axis_names, key=f"map_{y_col}")
-                # Plotlyで識別するためにインデックス番号を取得
-                axis_index = axis_names.index(assigned_axis)
-                data_axis_mapping[y_col] = {
-                    "axis_id": f"y{axis_index + 2}", # y2, y3, y4... に対応
-                    "axis_name": assigned_axis
-                }
+        if y_axes:
+            mapping_cols = st.columns(len(y_axes))
+            for idx, y_col in enumerate(y_axes):
+                with mapping_cols[idx]:
+                    assigned_axis = st.selectbox(f"「{y_col}」の縦軸", options=axis_names, key=f"map_{y_col}")
+                    axis_index = axis_names.index(assigned_axis)
+                    data_axis_mapping[y_col] = {
+                        "axis_id": f"y{axis_index + 2}",
+                        "axis_name": assigned_axis
+                    }
 
         # 線の引き方
         st.subheader("表示する線の選択")
@@ -127,90 +124,87 @@ if not df.empty:
         # -----------------------------------------------------------------------------
         st.header("3. 生成されたグラフ")
 
-        fig = px.line()
-        color_cycle = px.colors.qualitative.Plotly
-        color_idx = 0
+        if not y_axes:
+            st.warning("データ列を1つ以上選択してください。")
+        else:
+            fig = px.line()
+            color_cycle = px.colors.qualitative.Plotly
+            color_idx = 0
 
-        # トレンド線・形状判定の関数
-        def get_trendline_data(dataframe, x_col, y_col):
-            try:
-                x_vals = pd.to_numeric(dataframe[x_col]).values
-                y_vals = pd.to_numeric(dataframe[y_col]).values
-                idx = np.isfinite(x_vals) & np.isfinite(y_vals)
-                a, b = np.polyfit(x_vals[idx], y_vals[idx], 1)
-                return np.array([min(x_vals), max(x_vals)]), a * np.array([min(x_vals), max(x_vals)]) + b
-            except: return None, None
+            def get_trendline_data(dataframe, x_col, y_col):
+                try:
+                    x_vals = pd.to_numeric(dataframe[x_col]).values
+                    y_vals = pd.to_numeric(dataframe[y_col]).values
+                    idx = np.isfinite(x_vals) & np.isfinite(y_vals)
+                    a, b = np.polyfit(x_vals[idx], y_vals[idx], 1)
+                    return np.array([min(x_vals), max(x_vals)]), a * np.array([min(x_vals), max(x_vals)]) + b
+                except: return None, None
 
-        def determine_shape(dataframe, x, y):
-            try:
-                x_val, y_val = pd.to_numeric(dataframe[x]).values, pd.to_numeric(dataframe[y]).values
-                if len(x_val) < 3: return "linear"
-                return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
-            except: return "linear"
+            def determine_shape(dataframe, x, y):
+                try:
+                    x_val, y_val = pd.to_numeric(dataframe[x]).values, pd.to_numeric(dataframe[y]).values
+                    if len(x_val) < 3: return "linear"
+                    return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
+                except: return "linear"
 
-        # 基本レイアウト（ダミーの左軸を非表示に）
-        layout_kwargs = {
-            "xaxis": dict(title=x_axis, range=x_range_input),
-            "yaxis": dict(visible=False),
-            "hovermode": "closest"
-        }
+            layout_kwargs = {
+                "xaxis": dict(title=x_axis, range=x_range_input),
+                "yaxis": dict(visible=False),
+                "hovermode": "closest"
+            }
 
-        # ユーザーが作成した「軸の名前」をベースに、右側の軸レイアウトを構築
-        for ax_idx, name in enumerate(axis_names):
-            axis_id = f"y{ax_idx + 2}"
-            position_offset = 1.0 + (ax_idx * 0.08) # 軸同士が被らないようにずらす
-            
-            layout_kwargs[f"yaxis{ax_idx + 2}"] = dict(
-                title=name,
-                overlaying="y",
-                side="right",
-                anchor="free",
-                position=position_offset,
-                range=y_range_input
-            )
+            for ax_idx, name in enumerate(axis_names):
+                axis_id = f"y{ax_idx + 2}"
+                position_offset = 1.0 + (ax_idx * 0.08)
+                
+                layout_kwargs[f"yaxis{ax_idx + 2}"] = dict(
+                    title=name,
+                    overlaying="y",
+                    side="right",
+                    anchor="free",
+                    position=position_offset,
+                    range=y_range_input
+                )
 
-        # 選択されたデータをループしてプロット
-        for y_axis in y_axes:
-            # そのデータが属する軸の情報を取得
-            mapping = data_axis_mapping.get(y_axis)
-            if not mapping: continue
-            
-            axis_id = mapping["axis_id"]
-            axis_name = mapping["axis_name"]
+            for y_axis in y_axes:
+                mapping = data_axis_mapping.get(y_axis)
+                if not mapping: continue
+                
+                axis_id = mapping["axis_id"]
 
-            if color_axis != "なし":
-                unique_categories = df[color_axis].unique()
-                for cat in unique_categories:
+                if color_axis != "なし":
+                    unique_categories = df[color_axis].unique()
+                    for cat in unique_categories:
+                        assigned_color = color_cycle[color_idx % len(color_cycle)]
+                        color_idx += 1
+                        sub_df = df[df[color_axis] == cat]
+                        
+                        fig.add_scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=f"{y_axis} ({cat})", yaxis=axis_id)
+                        if show_trend:
+                            x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
+                            if x_t is not None: fig.add_scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} ({cat}) [直線]", yaxis=axis_id)
+                        if show_curve:
+                            shape_type = determine_shape(sub_df, x_axis, y_axis)
+                            fig.add_scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} ({cat}) [各点結び]", yaxis=axis_id)
+                else:
                     assigned_color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
-                    sub_df = df[df[color_axis] == cat]
                     
-                    fig.add_scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=f"{y_axis} ({cat})", yaxis=axis_id)
+                    fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=y_axis, yaxis=axis_id)
                     if show_trend:
-                        x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                        if x_t is not None: fig.add_scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} ({cat}) [直線]", yaxis=axis_id)
+                        x_t, y_t = get_trendline_data(df, x_axis, y_axis)
+                        if x_t is not None: fig.add_scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} [直線]", yaxis=axis_id)
                     if show_curve:
-                        shape_type = determine_shape(sub_df, x_axis, y_axis)
-                        fig.add_scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} ({cat}) [各点結び]", yaxis=axis_id)
-            else:
-                assigned_color = color_cycle[color_idx % len(color_cycle)]
-                color_idx += 1
-                
-                fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=y_axis, yaxis=axis_id)
-                if show_trend:
-                    x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                    if x_t is not None: fig.add_scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} [直線]", yaxis=axis_id)
-                if show_curve:
-                    shape_type = determine_shape(df, x_axis, y_axis)
-                    fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
+                        shape_type = determine_shape(df, x_axis, y_axis)
+                        fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
 
-        layout_kwargs["margin"] = dict(r=80 * num_custom_axes)
-        fig.update_layout(**layout_kwargs)
-        st.plotly_chart(fig, use_container_width=True)
+            layout_kwargs["margin"] = dict(r=80 * num_custom_axes)
+            fig.update_layout(**layout_kwargs)
+            st.plotly_chart(fig, use_container_width=True)
 
-        # -----------------------------------------------------------------------------
-        # 4. ファイル保存
-        # -----------------------------------------------------------------------------
-        st.header("4. データの保存")
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(label="📥 入力データをCSVで保存", data=csv, file_name="graph_data.csv", mime="text/csv")
+            # -----------------------------------------------------------------------------
+            # 4. ファイル保存
+            # -----------------------------------------------------------------------------
+            st.header("4. データの保存")
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(label="📥 入力データをCSVで保存", data=csv, file_name="graph_data.csv", mime="text/csv")
