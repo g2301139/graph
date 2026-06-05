@@ -3,11 +3,12 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 from io import StringIO
+import re
 
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("すべての縦軸を左側に配置しました。必要に応じて簡単に軸を統合できます。")
+st.write("初期状態ではデータの項目名がそのまま右側の縦軸になります。必要に応じて簡単に軸を統合できます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -30,14 +31,31 @@ paste_input = st.text_area(
 )
 
 try:
-    df = pd.read_csv(StringIO(paste_input), sep='\t')
-    if len(df.columns) == 1 and ',' in paste_input:
-        df = pd.read_csv(StringIO(paste_input), sep=',')
+    # ★★★ コピペデータの区切り文字判定を強力に改良 ★★★
+    if paste_input:
+        first_line = paste_input.strip().split('\n')[0]
+        
+        # タブ、カンマ、2つ以上のスペースのどれで区切られているか判別
+        if '\t' in first_line:
+            sep_char = '\t'
+        elif ',' in first_line:
+            sep_char = ','
+        else:
+            # スペース（1つ以上）で区切られている場合の処理
+            # 連続するスペースを1つのタブに置換して読み込ませる安全策
+            lines = paste_input.strip().split('\n')
+            cleaned_lines = [re.sub(r'\s+', '\t', line) for line in lines]
+            paste_input = '\n'.join(cleaned_lines)
+            sep_char = '\t'
+            
+        df = pd.read_csv(StringIO(paste_input), sep=sep_char)
+    else:
+        df = pd.DataFrame()
         
     st.subheader("現在のデータ確認")
     st.dataframe(df, use_container_width=True, hide_index=True)
 except Exception as e:
-    st.error(f"データの読み込みに失敗しました。エラー: {e}")
+    st.error(f"データの読み込みに失敗しました。区切りを正しく判定できません。エラー: {e}")
     df = pd.DataFrame()
 
 # -----------------------------------------------------------------------------
@@ -48,14 +66,15 @@ if not df.empty:
     columns = df.columns.tolist()
 
     if len(columns) < 2:
-        st.error("データを2列以上入力してください。")
+        st.error("データの列が正しく分かれていません。貼り付けたデータを確認してください。")
     else:
         col1, col2, col3 = st.columns(3)
         
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            default_y = [columns[1], columns[2]] if len(columns) > 2 else [columns[1]]
+            # 初期選択として、2列目以降が存在すればすべて選択状態にする（勝手に複数表示されるように調整）
+            default_y = columns[1:] if len(columns) > 1 else [columns[0]]
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
@@ -75,7 +94,7 @@ if not df.empty:
                 
                 for y_col in y_axes:
                     data_axis_mapping[y_col] = {
-                        "axis_id": "y2", # Plotlyの動的軸用ID
+                        "axis_id": "y2",
                         "axis_name": integrated_name
                     }
             else:
@@ -148,18 +167,15 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # 共通レイアウト（Plotlyの土台となる元々の第1軸は、スペース計算が狂いやすいため非表示にします）
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "yaxis": dict(visible=False),
                 "hovermode": "closest"
             }
 
-            # ★★★ 変更点：すべて左側（side='left'）へ配置 ★★★
-            # 複数の軸が重ならないように、左へ向かって位置(position)を外側にずらしていきます
+            # すべて左側（side='left'）へ配置、重なり防止
             for ax_idx, name in enumerate(axis_names):
                 axis_id = f"y{ax_idx + 2}"
-                # 最初の軸は 0.0、2つ目の軸は -0.08、3つ目は -0.16... と左側に拡張
                 position_offset = 0.0 - (ax_idx * 0.08)
                 
                 layout_kwargs[f"yaxis{ax_idx + 2}"] = dict(
@@ -204,7 +220,6 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
 
-            # 左側に軸が飛び出すため、グラフの左マージンを動的に広げて文字切れを防ぐ
             layout_kwargs["margin"] = dict(l=80 * len(axis_names))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
