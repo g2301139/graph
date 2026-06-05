@@ -196,36 +196,39 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
 
-            # 基本レイアウトの初期化
-            fig.update_layout(
-                xaxis=dict(title=x_axis, range=x_range_input, domain=[0.05, 0.85]),
-                hovermode="closest"
-            )
+            # 🛠️【決定版：一括アップデート用の引数辞書を安全に組み立てる】
+            update_args = {
+                "xaxis": dict(title=dict(text=x_axis), range=x_range_input, domain=[0.05, 0.85]),
+                "hovermode": "closest"
+            }
 
-            # 軸の名前や位置設定を、go.layout.YAxis オブジェクトに変換して注入
+            # 軸の名前や位置設定を、正しいネスト形式の辞書で構築して注入
             for i, name in enumerate(axis_names):
                 actual_range = y_range_input if custom_range else None
+                axis_color = color_cycle[i % len(color_cycle)]
                 
-                # 辞書ではなく、最初から正規のYAxisオブジェクトとして構築
-                axis_obj = go.layout.YAxis(
-                    title=name,
+                axis_config = dict(
+                    title=dict(text=name, font=dict(color=axis_color)),
                     range=actual_range,
-                    titlefont=dict(color=color_cycle[i % len(color_cycle)]),
-                    tickfont=dict(color=color_cycle[i % len(color_cycle)])
+                    tickfont=dict(color=axis_color)
                 )
                 
                 if i == 0:
-                    axis_obj.side = "left"
+                    axis_config["side"] = "left"
                 else:
                     position_offset = 0.85 + ((i - 1) * 0.07)
-                    axis_obj.overlaying = "y"
-                    axis_obj.side = "right"
-                    axis_obj.anchor = "free"
-                    axis_obj.position = position_offset
+                    axis_config.update(dict(
+                        overlaying="y",
+                        side="right",
+                        anchor="free",
+                        position=position_offset
+                    ))
                 
-                # 正規オブジェクトであれば、setattrが厳格な型チェックをクリアして安全に受け入れます
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
-                setattr(fig.layout, axis_key, axis_obj)
+                update_args[axis_key] = axis_config
+
+            # 最後にPlotly公式推奨の引数アンパックで一括適用（これで型エラーを完全に回避します）
+            fig.update_layout(**update_args)
 
             # 最終描画
             st.plotly_chart(fig, use_container_width=True)
