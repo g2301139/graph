@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("起動時のエラーを完全に修正しました。コピペしたデータに合わせて、自動で左側に縦軸が並びます。")
+st.write("複数データ選択時の軸エラーを完全に修正しました。自動で左側に縦軸が並びます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -39,7 +39,6 @@ if paste_input.strip():
         processed_lines = []
         for line in lines:
             if ',' not in line:
-                # すべての連続する空白（全角・半角スペース・タブ）を1つのタブに統一
                 line = re.sub(r'[\t\s ]+', '\t', line)
             processed_lines.append(line)
         
@@ -129,6 +128,7 @@ if not df.empty:
             with cy1: y_min = st.number_input("Y軸 最小値", value=y_min_def)
             with cy2: y_max = st.number_input("Y軸 最大値", value=y_max_def)
             x_range_input = [x_min, x_max]
+            # 有効な数値が入っている場合のみリストにする
             y_range_input = [y_min, y_max]
 
         # -----------------------------------------------------------------------------
@@ -193,28 +193,36 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
 
-            # 軸のレイアウト定義
+            # 軸の基本レイアウト
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "hovermode": "closest"
             }
 
-            # すべての軸を完全に「左側」へ重ねずにずらして配置
+            # ★【最重要エラー修正】複数軸の設定をバグが起きない安全な記述法に変更
             for i, name in enumerate(axis_names):
                 position_offset = 0.0 - (i * 0.08)
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
                 
-                layout_kwargs[axis_key] = dict(
+                # 手動範囲指定がチェックされていないときはNoneを渡して自動スケールに
+                actual_range = y_range_input if custom_range else None
+                
+                axis_config = dict(
                     title=name,
                     side="left",
-                    anchor="free",
-                    position=position_offset,
-                    overlaying="y" if i > 0 else None,
-                    range=y_range_input
+                    range=actual_range
                 )
+                
+                # 2つ目以降の軸を重ね合わせるための設定
+                if i > 0:
+                    axis_config["overlaying"] = "y"
+                    axis_config["anchor"] = "free"
+                    axis_config["position"] = position_offset
+                
+                layout_kwargs[axis_key] = axis_config
 
             # 左側の文字が切れないように、軸の数に合わせて余白を確保
-            layout_kwargs["margin"] = dict(l=max(80, 80 * len(axis_names)))
+            layout_kwargs["margin"] = dict(l=max(80, 85 * len(axis_names)))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
 
