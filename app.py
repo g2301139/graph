@@ -8,7 +8,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("初期状態ではデータの項目名がそのまま右側の縦軸になります。必要に応じて簡単に軸を統合できます。")
+st.write("コピペデータの判定を最強に強化しました。自動で別々の左縦軸になり、チェックを入れると1つに統合できます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -30,33 +30,37 @@ paste_input = st.text_area(
     height=180
 )
 
-try:
-    # ★★★ コピペデータの区切り文字判定を強力に改良 ★★★
-    if paste_input:
-        first_line = paste_input.strip().split('\n')[0]
+df = pd.DataFrame()
+
+if paste_input.strip():
+    try:
+        # 【最重要】すべての行の「連続する空白や特殊な空白スペース」をすべてタブ「\t」に一発変換
+        lines = paste_input.strip().split('\n')
+        processed_lines = []
+        for line in lines:
+            # カンマ区切りではない場合、あらゆる空白（全角スペース、連続スペース、タブ）を1つのタブに統一
+            if ',' not in line:
+                line = re.sub(r'[\t\s ]+', '\t', line)
+            processed_lines.append(line)
         
-        # タブ、カンマ、2つ以上のスペースのどれで区切られているか判別
-        if '\t' in first_line:
-            sep_char = '\t'
-        elif ',' in first_line:
-            sep_char = ','
-        else:
-            # スペース（1つ以上）で区切られている場合の処理
-            # 連続するスペースを1つのタブに置換して読み込ませる安全策
-            lines = paste_input.strip().split('\n')
-            cleaned_lines = [re.sub(r'\s+', '\t', line) for line in lines]
-            paste_input = '\n'.join(cleaned_lines)
-            sep_char = '\t'
-            
-        df = pd.read_csv(StringIO(paste_input), sep=sep_char)
-    else:
+        final_input = '\n'.join(processed_lines)
+        sep_char = ',' if ',' in processed_lines[0] else '\t'
+        
+        # データを読み込む
+        df = pd.read_csv(StringIO(final_input), sep=sep_char)
+        
+        # 万が一、それでも1列になってしまった場合の最終防衛策
+        if len(df.columns) == 1:
+            df = pd.read_csv(StringIO(final_input), sep=r'\s+', engine='python')
+
+    except Exception as e:
+        st.error(f"データの読み込みに失敗しました。エラー: {e}")
         df = pd.DataFrame()
-        
+
+# 読み込み成功時の表示
+if not df.empty:
     st.subheader("現在のデータ確認")
     st.dataframe(df, use_container_width=True, hide_index=True)
-except Exception as e:
-    st.error(f"データの読み込みに失敗しました。区切りを正しく判定できません。エラー: {e}")
-    df = pd.DataFrame()
 
 # -----------------------------------------------------------------------------
 # 2. グラフの設定セクション
@@ -66,15 +70,17 @@ if not df.empty:
     columns = df.columns.tolist()
 
     if len(columns) < 2:
-        st.error("データの列が正しく分かれていません。貼り付けたデータを確認してください。")
+        st.error("データの列が正しく分かれていません。貼り付けるデータの区切り（空白やタブ）を確認してください。")
     else:
         col1, col2, col3 = st.columns(3)
         
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            # 初期選択として、2列目以降が存在すればすべて選択状態にする（勝手に複数表示されるように調整）
-            default_y = columns[1:] if len(columns) > 1 else [columns[0]]
+            # X軸以外のデータ（2列目以降）を最初から「自動で勝手に全部選択」する
+            default_y = [c for c in columns if c != x_axis]
+            if not default_y:
+                default_y = [columns[0]]
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
@@ -86,10 +92,12 @@ if not df.empty:
         data_axis_mapping = {}
 
         if y_axes and len(y_axes) > 1:
+            # 「縦軸を統合する」チェックボックス
             is_integrated = st.checkbox("選択したデータの縦軸（名前）を1つに統合する")
             
             if is_integrated:
-                integrated_name = st.text_input("統合後の縦軸の名前を入力してください（例：金額（円）、数値など）", value="統合された縦軸")
+                # 統合する場合：新しく名前を1つ聞いて、それを左側に書く
+                integrated_name = st.text_input("統合後の縦軸の名前を入力してください", value="統合された縦軸")
                 axis_names = [integrated_name]
                 
                 for y_col in y_axes:
@@ -98,6 +106,7 @@ if not df.empty:
                         "axis_name": integrated_name
                     }
             else:
+                # 統合しない（最初）：データの確認の上に書いてある名前がそのまま別々の縦軸になる
                 for idx, y_col in enumerate(y_axes):
                     data_axis_mapping[y_col] = {
                         "axis_id": f"y{idx + 2}",
@@ -167,16 +176,17 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
+            # グラフの土台（すべての軸の名前を「左側」に統一）
             layout_kwargs = {
                 "xaxis": dict(title=x_axis, range=x_range_input),
                 "yaxis": dict(visible=False),
                 "hovermode": "closest"
             }
 
-            # すべて左側（side='left'）へ配置、重なり防止
+            # 確定した軸名リストをすべて「左側(side='left')」に配置
             for ax_idx, name in enumerate(axis_names):
                 axis_id = f"y{ax_idx + 2}"
-                position_offset = 0.0 - (ax_idx * 0.08)
+                position_offset = 0.0 - (ax_idx * 0.09) # 軸が被らないように左側にずらす
                 
                 layout_kwargs[f"yaxis{ax_idx + 2}"] = dict(
                     title=name,
@@ -220,7 +230,8 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=axis_id)
 
-            layout_kwargs["margin"] = dict(l=80 * len(axis_names))
+            # 左側の文字が切れないように余白を設定
+            layout_kwargs["margin"] = dict(l=90 * len(axis_names))
             fig.update_layout(**layout_kwargs)
             st.plotly_chart(fig, use_container_width=True)
 
