@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("最新のPython環境におけるPlotlyの複数軸エラーを完全に修正しました。")
+st.write("軸ごとの個別範囲設定、左側への複数軸配置、データごとの線種選択に完全対応しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -80,11 +80,12 @@ if not df.empty:
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 縦軸（Y軸）の配置設定
+        # 縦軸（Y軸）の配置・統合設定
         st.subheader("縦軸（Y軸）の配置設定")
         
         axis_names = []
         data_axis_mapping = {}
+        is_integrated = False
 
         if y_axes:
             if len(y_axes) > 1:
@@ -105,34 +106,60 @@ if not df.empty:
         else:
             axis_names = ["縦軸"]
 
-        # 線の引き方
+        # 🛠️【データごとの線の引き方設定】
         st.subheader("表示する線の選択")
-        col_show1, col_show2 = st.columns(2)
-        with col_show1:
-            show_trend = st.checkbox("全体の平均を通る一直線（トレンド線）を表示する", value=False)
-        with col_show2:
-            show_curve = st.checkbox("数値をみて自動判定した線を表示する", value=False)
+        line_styles_config = {}  # 各データ列の線種設定を保存する辞書
+        
+        if y_axes:
+            # 2カラムに分けてすっきり配置
+            style_cols = st.columns(2)
+            for idx, y_col in enumerate(y_axes):
+                with style_cols[idx % 2]:
+                    # プロットするデータごとにセレクトボックスで選択
+                    line_style = st.selectbox(
+                        f"「{y_col}」の線の引き方",
+                        options=["マーカーのみ（線なし）", "数値を自動判定した線（曲線）", "全体の平均を通る一直線（トレンド線）"],
+                        index=1,
+                        key=f"style_{y_col}"
+                    )
+                    line_styles_config[y_col] = line_style
 
-        # 軸の最大値・最小値
+        # 軸の最大値・最小値設定（軸ごとに動的生成）
         st.subheader("軸の表示範囲設定")
         custom_range = st.checkbox("手動で軸の最大値・最小値を指定する")
         
         try:
             x_min_def, x_max_def = float(df[x_axis].min()), float(df[x_axis].max())
-            y_min_def = float(df[y_axes].min().min()) if y_axes else 0.0
-            y_max_def = float(df[y_axes].max().max()) if y_axes else 100.0
         except:
-            x_min_def, x_max_def, y_min_def, y_max_def = 0.0, 100.0, 0.0, 100.0
+            x_min_def, x_max_def = 0.0, 100.0
 
-        x_range_input, y_range_input = None, None
+        x_range_input = None
+        y_ranges_config = {}
+
         if custom_range:
-            cx1, cx2, cy1, cy2 = st.columns(4)
+            cx1, cx2 = st.columns(2)
             with cx1: x_min = st.number_input("X軸 最小値", value=x_min_def)
             with cx2: x_max = st.number_input("X軸 最大値", value=x_max_def)
-            with cy1: y_min = st.number_input("Y軸 最小値", value=y_min_def)
-            with cy2: y_max = st.number_input("Y軸 最大値", value=y_max_def)
             x_range_input = [x_min, x_max]
-            y_range_input = [y_min, y_max]
+            
+            st.write("▼ Y軸の範囲設定")
+            for i, name in enumerate(axis_names):
+                st.markdown(f"**{name}** の範囲")
+                cy1, cy2 = st.columns(2)
+                
+                try:
+                    if is_integrated:
+                        y_min_def = float(df[y_axes].min().min())
+                        y_max_def = float(df[y_axes].max().max())
+                    else:
+                        y_min_def = float(df[name].min())
+                        y_max_def = float(df[name].max())
+                except:
+                    y_min_def, y_max_def = 0.0, 100.0
+                
+                with cy1: y_min = st.number_input(f"最小値 ({name})", value=y_min_def, key=f"ymin_{i}")
+                with cy2: y_max = st.number_input(f"最大値 ({name})", value=y_max_def, key=f"ymax_{i}")
+                y_ranges_config[i] = [y_min, y_max]
 
         # -----------------------------------------------------------------------------
         # 3. グラフの描画
@@ -169,6 +196,9 @@ if not df.empty:
                 
                 ax_idx = mapping["axis_idx"]
                 yaxis_id = "y" if ax_idx == 0 else f"y{ax_idx + 1}"
+                
+                # このデータ列に指定された線種の設定を取得
+                selected_style = line_styles_config.get(y_axis, "数値を自動判定した線（曲線）")
 
                 if color_axis != "なし":
                     unique_categories = df[color_axis].unique()
@@ -177,49 +207,58 @@ if not df.empty:
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
                         
+                        # ベースとなる点プロット
                         fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=f"{y_axis} ({cat})", yaxis=yaxis_id))
-                        if show_trend:
+                        
+                        # 直線の実線プロット
+                        if selected_style == "全体の平均を通る一直線（トレンド線）":
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                            if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} ({cat}) [直線]", yaxis=yaxis_id))
-                        if show_curve:
+                            if x_t is not None: 
+                                fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{y_axis} ({cat}) [直線]", yaxis=yaxis_id))
+                        
+                        # 曲線プロット
+                        elif selected_style == "数値を自動判定した線（曲線）":
                             shape_type = determine_shape(sub_df, x_axis, y_axis)
-                            fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} ({cat}) [各点結び]", yaxis=yaxis_id))
+                            fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} ({cat}) [曲線]", yaxis=yaxis_id))
                 else:
                     assigned_color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
                     
                     fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=y_axis, yaxis=yaxis_id))
-                    if show_trend:
+                    
+                    if selected_style == "全体の平均を通る一直線（トレンド線）":
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                        if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="dash"), name=f"{y_axis} [直線]", yaxis=yaxis_id))
-                    if show_curve:
+                        if x_t is not None: 
+                            fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{y_axis} [直線]", yaxis=yaxis_id))
+                    
+                    elif selected_style == "数値を自動判定した線（曲線）":
                         shape_type = determine_shape(df, x_axis, y_axis)
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [各点結び]", yaxis=yaxis_id))
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{y_axis} [曲線]", yaxis=yaxis_id))
 
-            # 🛠️【決定版：一括アップデート用の引数辞書を安全に組み立てる】
+            # 左側に複数軸を並べるためのドメイン計算
+            xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
+
             update_args = {
-                "xaxis": dict(title=dict(text=x_axis), range=x_range_input, domain=[0.05, 0.85]),
+                "xaxis": dict(title=dict(text=x_axis), range=x_range_input, domain=[xaxis_start_domain, 1.0]),
                 "hovermode": "closest"
             }
 
-            # 軸の名前や位置設定を、正しいネスト形式の辞書で構築して注入
+            # 各軸のレイアウトを構築
             for i, name in enumerate(axis_names):
-                actual_range = y_range_input if custom_range else None
+                actual_range = y_ranges_config.get(i) if custom_range else None
                 axis_color = color_cycle[i % len(color_cycle)]
                 
                 axis_config = dict(
                     title=dict(text=name, font=dict(color=axis_color)),
                     range=actual_range,
-                    tickfont=dict(color=axis_color)
+                    tickfont=dict(color=axis_color),
+                    side="left"
                 )
                 
-                if i == 0:
-                    axis_config["side"] = "left"
-                else:
-                    position_offset = 0.85 + ((i - 1) * 0.07)
+                if i > 0:
+                    position_offset = xaxis_start_domain - (i * 0.08)
                     axis_config.update(dict(
                         overlaying="y",
-                        side="right",
                         anchor="free",
                         position=position_offset
                     ))
@@ -227,7 +266,6 @@ if not df.empty:
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
                 update_args[axis_key] = axis_config
 
-            # 最後にPlotly公式推奨の引数アンパックで一括適用（これで型エラーを完全に回避します）
             fig.update_layout(**update_args)
 
             # 最終描画
