@@ -7,7 +7,7 @@ from io import StringIO
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("縦軸の数（名前）とデータの数を自由に組み合わせて、すべて右側に配置できます。")
+st.write("貼り付けたデータから軸の名前と数を自動で作成します。必要に応じて後から自由に変更可能です。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -35,7 +35,6 @@ try:
         df = pd.read_csv(StringIO(paste_input), sep=',')
         
     st.subheader("現在のデータ確認")
-    # ★ hide_index=True を指定することで、左側の 0, 1, 2... という行番号を非表示にしました
     st.dataframe(df, use_container_width=True, hide_index=True)
 except Exception as e:
     st.error(f"データの読み込みに失敗しました。エラー: {e}")
@@ -56,25 +55,34 @@ if not df.empty:
         with col1:
             x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0)
         with col2:
-            # ★ 安全対策：初期選択(default)を固定インデックスではなく、安全に存在する列から選ぶように修正
             default_y = [columns[1]] if len(columns) > 1 else [columns[0]]
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 縦軸の名前の設定
+        # ★★★ 改良：初期状態では自動で軸名を推測・作成する仕組み ★★★
         st.subheader("縦軸（名前）のカスタマイズ")
-        num_custom_axes = st.number_input("用意する縦軸（名前）の数", min_value=1, max_value=5, value=1)
+        
+        # 最初は、選んだデータの種類に合わせて軸の数を自動決定
+        default_num_axes = len(y_axes) if y_axes else 1
+        num_custom_axes = st.number_input("用意する縦軸（名前）の数", min_value=1, max_value=5, value=default_num_axes)
         
         axis_names = []
-        st.write("縦軸の名前を決めてください（右側からこの順番で並びます）：")
-        ax_cols = st.columns(int(num_custom_axes))
+        st.write("縦軸の名前（最初は自動で設定されています。自由に変更可能です）：")
+        ax_cols = st.columns(max(1, int(num_custom_axes)))
+        
         for idx in range(int(num_custom_axes)):
             with ax_cols[idx]:
-                default_name = f"金額（円）" if idx == 0 else f"カスタム軸 {idx+1}"
+                # 初期値として、選んだデータの列名をそのまま軸名として「勝手に」採用します
+                if idx < len(y_axes):
+                    default_name = y_axes[idx]
+                else:
+                    default_name = f"カスタム軸 {idx+1}"
+                
                 ax_name = st.text_input(f"縦軸 {idx+1} の名前", value=default_name, key=f"ax_name_input_{idx}")
                 axis_names.append(ax_name)
 
+        # データの所属軸設定（これも初期状態は自動で1対1にマッピング）
         st.subheader("データの所属軸設定")
         st.write("各データを、上で作ったどの縦軸にまとめますか？")
         
@@ -83,7 +91,10 @@ if not df.empty:
             mapping_cols = st.columns(len(y_axes))
             for idx, y_col in enumerate(y_axes):
                 with mapping_cols[idx]:
-                    assigned_axis = st.selectbox(f"「{y_col}」の縦軸", options=axis_names, key=f"map_{y_col}")
+                    # 初期状態の選択肢を賢く自動選択（軸名リストの中に、自身のデータ名があればそれをデフォルトに）
+                    default_axis_index = idx if idx < len(axis_names) else 0
+                    assigned_axis = st.selectbox(f"「{y_col}」の縦軸", options=axis_names, index=default_axis_index, key=f"map_{y_col}")
+                    
                     axis_index = axis_names.index(assigned_axis)
                     data_axis_mapping[y_col] = {
                         "axis_id": f"y{axis_index + 2}",
