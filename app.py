@@ -124,7 +124,6 @@ if st.session_state.datasets:
             with col3:
                 color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0, key=f"color_{idx}")
 
-            # 【新規追加】軸の名前変更用テキストボックス
             st.markdown("✏️ **軸の名前（ラベル）を編集**")
             label_col1, label_col2 = st.columns(2)
             with label_col1:
@@ -192,22 +191,22 @@ if st.session_state.datasets:
                             c_idx += 1
                             
                             if selected_style == "トレンド線（直線）":
-                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}_{cat}"))
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name))
                                 x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                                if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", legendgroup=f"{idx}_{y_axis}_{cat}", showlegend=False))
+                                if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (トレンド線)"))
                             else:
-                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, legendgroup=f"{idx}_{y_axis}_{cat}"))
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name))
                     else:
                         c_name = legend_names_config.get(y_axis)
                         color = color_cycle[c_idx % len(color_cycle)]
                         c_idx += 1
                         
                         if selected_style == "トレンド線（直線）":
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}"))
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name))
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                            if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
+                            if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (トレンド線)"))
                         else:
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, legendgroup=f"{idx}_{y_axis}"))
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name))
                 
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
@@ -236,12 +235,12 @@ if st.session_state.datasets:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
         st.subheader("② 目盛り（スケール）と軸名（ラベル）の設定")
-        integrate_scales = st.checkbox("データごとに異なるY軸にせず、すべてのデータでY軸の目盛りを1つに統合する", value=False)
+        
+        # ご指定通り文言を「y軸を固定して合体する」に変更しました
+        integrate_scales = st.checkbox("ｙ軸を固定して合体する", value=False)
 
-        # 【新規追加】合体グラフ用のX軸名とY軸名の編集フォーム
         st.markdown("✏️ **合体グラフの軸ラベル名編集**")
         
-        # 1つ目の選択データの情報を基準にデフォルトX軸名を生成
         first_cfg = configs.get(selected_indices[0]) if selected_indices else None
         default_merged_x_label = first_cfg["custom_x_label"] if first_cfg else "共通横軸 (X)"
         
@@ -257,7 +256,8 @@ if st.session_state.datasets:
             default_title = cfg["custom_y_label"]
             
             if loop_count == 0:
-                label_text = f"ベースとなる左側の縦軸名（第1 Y軸: {dataset['name']} 用）"
+                # y軸固定時は「共通縦軸」、マルチ軸時はそれぞれのデータ名に
+                label_text = "共通の縦軸名（Y軸）" if integrate_scales else f"ベースとなる左側の縦軸名（第1 Y軸: {dataset['name']} 用）"
                 custom_axis_titles["y"] = st.text_input(label_text, value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{dataset['name']}")
             elif not integrate_scales:
                 axis_label_idx += 1
@@ -326,22 +326,22 @@ if st.session_state.datasets:
                         merged_color_idx += 1
 
                         if selected_style == "トレンド線（直線）":
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis))
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (トレンド線)", xaxis=trace_xaxis, yaxis=trace_yaxis))
                         else:
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis))
                 else:
                     c_name = legend_names.get(y_axis)
                     color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                     merged_color_idx += 1
 
                     if selected_style == "トレンド線（直線）":
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis))
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (トレンド線)", xaxis=trace_xaxis, yaxis=trace_yaxis))
                     else:
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis))
 
         right_margin = 50 + (max(0, extra_y_count) * 75)
         update_layout_args["margin"] = dict(l=80, r=right_margin)
