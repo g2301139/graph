@@ -220,29 +220,49 @@ if not df.empty:
         else:
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
+            # 文字被りを防ぐために全体の上下余白を大きく確保する
             init_layout_args = {
-                "hovermode": "closest"
+                "hovermode": "closest",
+                "margin": dict(t=100, b=100, l=50, r=50) # 上(t)と下(b)の余白を広げて上部・下部の軸文字が入るスペースを作ります
             }
 
-            # 🛠️【修正箇所】マルチX軸のパラメータ定義（エラーが出ないよう構成を変更）
+            # 🛠️【被り対策アップデート】マルチX軸のパラメータ定義
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
                 
+                # standoffを指定して軸のタイトルと数字の間隔を広げる
                 x_dict = {
-                    "title": dict(text=name, font=dict(color="black")),
+                    "title": dict(text=name, font=dict(color="black"), standoff=20),
                     "range": actual_x_range,
                     "tickfont": dict(color="black"),
-                    "tickformat": ".0f",  # 略さずそのままフル表記
+                    "tickformat": ".0f",
                     "domain": [left_margin_domain, 1.0],
                     "showgrid": True if i == 0 else False
                 }
-                if i > 0:
+                
+                if i == 0:
+                    x_dict["side"] = "bottom"
+                else:
+                    # 2つ目以降の軸を振り分け
+                    side_position = "bottom" if i % 2 == 0 else "top"
                     x_dict.update({
                         "overlaying": "x",
                         "anchor": "free",
-                        "side": "bottom" if i % 2 == 0 else "top"  # 上下に交互配置して重なりを防ぐ
+                        "side": side_position,
                     })
+                    
+                    # 3つ目以降など、同じ側に複数の軸が並ぶ場合に外側にずらして重なりを防ぐ設定
+                    # PlotlyはX軸に対してFreeアンカーのとき y軸のdomain（0〜1）を基準にpositionを指定できます。
+                    # bottom側の追加軸は0より小さく（下へ）、top側の追加軸は1より大きく（上へ）ずらします。
+                    if i >= 2:
+                        if side_position == "bottom":
+                            # 例: 3番目の軸(i=2) -> bottom側、少し下(-0.15)にずらす
+                            x_dict["position"] = 0.0 - (0.12 * (i // 2))
+                        else:
+                            # 例: 2番目の軸(i=1) -> top側、初期位置(1.0)。4番目の軸(i=3) -> top側、少し上(1.12)にずらす
+                            x_dict["position"] = 1.0 + (0.12 * ((i - 1) // 2))
+
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
             # 実際に使うY軸のパラメーターをあらかじめ定義
@@ -254,7 +274,7 @@ if not df.empty:
                     "title": dict(text=name, font=dict(color="black"), standoff=15),
                     "range": actual_range,
                     "tickfont": dict(color="black"),
-                    "tickformat": ".0f",  # 略さずそのままフル表記
+                    "tickformat": ".0f",
                     "side": "left",
                     "showgrid": True if i == 0 else False
                 }
@@ -267,7 +287,6 @@ if not df.empty:
                     })
                 init_layout_args[axis_key] = go.layout.YAxis(**y_dict)
 
-            # 最初からマルチ軸が組み込まれた状態のFigureを組み立てる
             fig = go.Figure(layout=go.Layout(**init_layout_args))
 
             color_cycle = px.colors.qualitative.Plotly
@@ -289,7 +308,6 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # データを安全に割り当てられた軸に対してプロットしていく
             max_pairs = max(len(x_axes), len(y_axes))
             
             for idx_loop in range(max_pairs):
@@ -340,7 +358,6 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
 
-            # 最終描画
             st.plotly_chart(fig, use_container_width=True)
 
             # -----------------------------------------------------------------------------
