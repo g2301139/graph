@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("右側の凡例名（データ点の説明）を自由にカスタマイズできるようになりました。")
+st.write("X軸の統合機能を追加し、目盛りの数値が省略（1Mや10kなど）されないように修正しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -79,6 +79,14 @@ if not df.empty:
             y_axes = st.multiselect("グラフに描画するデータ列を選択（複数選択可）", options=columns, default=default_y)
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
+
+        # 🛠️【追加】X軸（横軸）の統合設定
+        st.subheader("X軸（横軸）の配置設定")
+        is_x_integrated = st.checkbox("X軸の名前をオリジナルの名前に統合・変更する", value=False)
+        if is_x_integrated:
+            x_axis_display_name = st.text_input("統合・変更後のX軸の名前を入力してください", value="統合されたX軸")
+        else:
+            x_axis_display_name = x_axis
 
         # 縦軸（Y軸）の配置・統合設定
         st.subheader("縦軸（Y軸）の配置設定")
@@ -226,10 +234,8 @@ if not df.empty:
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
                         
-                        # 🛠️ 入力されたカスタム凡例名を取得
                         custom_name = legend_names_config.get(f"{y_axis}_{cat}", f"{y_axis} ({cat})")
                         
-                        # データ点のプロット（右側の凡例名にカスタム名が適用されます）
                         fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}"))
                         
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
@@ -244,10 +250,8 @@ if not df.empty:
                     assigned_color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
                     
-                    # 🛠️ 入力されたカスタム凡例名を取得
                     custom_name = legend_names_config.get(y_axis, y_axis)
                     
-                    # データ点のプロット（右側の凡例名にカスタム名が適用されます）
                     fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=y_axis))
                     
                     if selected_style == "全体の平均を通る一直線（トレンド線）":
@@ -262,12 +266,14 @@ if not df.empty:
             # 左軸の間隔を確保
             xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.09)
 
+            # 🛠️ X軸の設定に、統合した名前(x_axis_display_name)と数値のフル表記フォーマット(tickformat)を反映
             update_args = {
                 "xaxis": dict(
-                    title=dict(text=x_axis, font=dict(color="black")), 
+                    title=dict(text=x_axis_display_name, font=dict(color="black")), 
                     range=x_range_input, 
                     domain=[xaxis_start_domain, 1.0],
-                    tickfont=dict(color="black")
+                    tickfont=dict(color="black"),
+                    tickformat="" # 省略（K, M等）をせず数値でそのまま出すデフォルト設定
                 ),
                 "hovermode": "closest"
             }
@@ -276,10 +282,12 @@ if not df.empty:
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
                 
+                # 🛠️ Y軸の目盛り数値も「tickformat="g"」を指定して1000000などをフル表記
                 axis_config = dict(
                     title=dict(text=name, font=dict(color="black"), standoff=20),
                     range=actual_range,
                     tickfont=dict(color="black"),
+                    tickformat="g", # 指数表記やK/M表記を防ぎ、そのままの数値をフル表記
                     side="left"
                 )
                 
