@@ -18,7 +18,7 @@ if "datasets" not in st.session_state:
     st.session_state.datasets = []
 
 # -----------------------------------------------------------------------------
-# 1. データの追加・管理セクション
+# 1. データの入力と管理
 # -----------------------------------------------------------------------------
 st.header("1. データの入力と管理")
 
@@ -92,9 +92,8 @@ def determine_shape(dataframe, x, y):
     except: return "linear"
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定 & 描画セクション（個別管理）
+# 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
-# 設定情報を合体グラフ側でも参照できるように、辞書として保持する仕組みを導入
 configs = {}
 
 if st.session_state.datasets:
@@ -146,7 +145,6 @@ if st.session_state.datasets:
                             custom_name = st.text_input(f"右側の表示名: {def_name}", value=def_name, key=f"legname_{idx}_{y_col}")
                             legend_names_config[y_col] = custom_name
 
-            # このデータセットの設定を保存
             configs[idx] = {
                 "x_axis": x_axis,
                 "y_axes": y_axes,
@@ -189,36 +187,45 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション（新機能）
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
-    st.write("登録されているデータの中から、1つのグラフに重ね合わせたいデータセットにチェックを入れてください。")
-
-    # どれを合体させるか選択するチェックボックス
+    
+    # 3-1. 合体対象の選択
+    st.subheader("① 合体するデータセットの選択")
     selected_indices = []
     cb_cols = st.columns(len(st.session_state.datasets))
     for idx, dataset in enumerate(st.session_state.datasets):
         with cb_cols[idx]:
-            # デフォルトで全てにチェックを入れておく
             if st.checkbox(f"合体する: {dataset['name']}", value=True, key=f"merge_cb_{idx}"):
                 selected_indices.append(idx)
 
     if len(selected_indices) < 1:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
-        # 合体用グラフの設定（Y軸の統合コントロール）
-        merge_integrated = st.checkbox("合体グラフの縦軸（Y軸）のスケールを1つに統合する", value=True)
-        
-        merged_fig = go.Figure()
-        color_cycle_merged = px.colors.qualitative.Alphabet # 色が被りにくいよう大きめのパレットを使用
-        merged_color_idx = 0
-        
-        # 複数軸を扱うためのマッピング用
-        axis_count = 0
-        update_layout_args = {"hovermode": "closest"}
+        # 3-2. 合体基準の選択（X軸をあわせるか、Y軸をあわせるか）
+        st.subheader("② 合体の基準と軸の設定")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            match_mode = st.radio(
+                "どちらの軸を共通（ベース）にして合体させますか？",
+                options=["X軸（横軸）を合わせて、Y軸（縦軸）を追加していく", "Y軸（縦軸）を合わせて、X軸（横軸）を追加していく"],
+                index=0
+            )
+        with cc2:
+            integrate_scales = st.checkbox("増える軸の目盛り（スケール）を1つに統合する", value=False)
 
-        for idx in selected_indices:
+        # 描画用変数の準備
+        merged_fig = go.Figure()
+        color_cycle_merged = px.colors.qualitative.Alphabet
+        merged_color_idx = 0
+        update_layout_args = {"hovermode": "closest"}
+        
+        extra_axis_count = 0  # 追加された軸の数
+
+        # プロット処理ループ
+        for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
             cfg = configs.get(idx)
@@ -229,24 +236,56 @@ if st.session_state.datasets:
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # Y軸のIDを決定（統合しない場合はデータごとに別軸を割り当て）
-            if merge_integrated:
-                yaxis_id = "y"
-            else:
-                axis_count += 1
-                yaxis_id = "y" if axis_count == 1 else f"y{axis_count}"
+            # --- 軸の割り当てロジック ---
+            if match_mode == "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく":
+                # X軸はすべて共通（xaxis='x'）
+                xaxis_id = "x"
                 
-                # 個別軸のレイアウト設定を用意
-                axis_config = dict(
-                    title=dict(text=f"{dataset['name']} の縦軸", font=dict(color="black")),
-                    tickfont=dict(color="black"),
-                    side="left" if axis_count == 1 else "right"
-                )
-                if axis_count > 1:
-                    axis_config.update(dict(overlaying="y", anchor="free" if axis_count > 2 else "x", position=1.0 + (axis_count - 2) * 0.05 if axis_count > 2 else 1.0))
-                update_layout_args[f"yaxis{'' if axis_count == 1 else axis_count}"] = axis_config
+                if loop_count == 0 or integrate_scales:
+                    yaxis_id = "y"
+                    # 最初の基本Y軸設定
+                    if loop_count == 0:
+                        update_layout_args["yaxis"] = dict(title="基本縦軸 (Y)", side="left")
+                else:
+                    # 2つ目以降で統合しない場合、右側にY軸を追加していく
+                    extra_axis_count += 1
+                    yaxis_id = f"y{extra_axis_count + 1}"
+                    
+                    # 右側に追加するY軸の配置（重ならないようにpositionを右側にシフト）
+                    pos_offset = 1.0 + (extra_axis_count - 1) * 0.06
+                    update_layout_args[f"yaxis{extra_axis_count + 1}"] = dict(
+                        title=dict(text=f"{dataset['name']} の縦軸 (Y)"),
+                        overlaying="y",
+                        side="right",
+                        anchor="free",
+                        position=pos_offset
+                    )
+            
+            else: # 「Y軸（縦軸）を合わせて、X軸（横軸）を追加していく」場合
+                # Y軸はすべて共通（yaxis='y'）
+                yaxis_id = "y"
+                
+                if loop_count == 0 or integrate_scales:
+                    xaxis_id = "x"
+                    if loop_count == 0:
+                        update_layout_args["xaxis"] = dict(title="基本横軸 (X)", side="bottom")
+                else:
+                    # 2つ目以降で統合しない場合、下側にX軸を追加していく
+                    extra_axis_count += 1
+                    xaxis_id = f"x{extra_axis_count + 1}"
+                    
+                    # 下側に追加するX軸の配置（重ならないようにpositionをさらに下側にシフト）
+                    pos_offset = 0.0 - (extra_axis_count * 0.08)
+                    update_layout_args[f"xaxis{extra_axis_count + 1}"] = dict(
+                        title=dict(text=f"{dataset['name']} の横軸 (X)"),
+                        overlaying="x",
+                        side="bottom",
+                        anchor="free",
+                        position=pos_offset
+                    )
+            # ---------------------------
 
-            # プロット処理
+            # データのプロット
             for y_axis in cfg["y_axes"]:
                 selected_style = line_styles.get(y_axis)
                 
@@ -257,35 +296,38 @@ if st.session_state.datasets:
                         color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                         merged_color_idx += 1
 
-                        merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
+                        merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
                         elif selected_style == "数値を自動判定した線（曲線）":
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
                 else:
                     c_name = legend_names.get(y_axis)
                     color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                     merged_color_idx += 1
 
-                    merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}"))
+                    merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}"))
                     if selected_style == "全体の平均を通る一直線（トレンド線）":
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
                     elif selected_style == "数値を自動判定した線（曲線）":
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
-        # レイアウトの最終反映
-        if merge_integrated:
-            update_layout_args["yaxis"] = dict(title="共通縦軸")
-        
-        # 最初のデータセットのX軸名を代表として設定
-        first_x = configs[selected_indices[0]]["x_axis"] if selected_indices else "X軸"
-        update_layout_args["xaxis"] = dict(title=first_x)
-        
+        # 軸を統合する場合の代表ラベル設定
+        if integrate_scales:
+            if match_mode == "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく":
+                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", side="left")
+            else:
+                update_layout_args["xaxis"] = dict(title="共通横軸 (X)", side="bottom")
+
+        # レイアウト更新と描画
         merged_fig.update_layout(**update_layout_args)
         
-        st.subheader("📉 合体したグラフ（重ね合わせ）")
-        st.plotly_chart(merged_fig, use_container_width=True, key="merged_chart_view")
+        # 軸が増えたときにグラフが潰れないよう、下側に軸が増える場合は少し高さを出す
+        fig_height = 500 + (extra_axis_count * 40) if (match_mode != "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく" and not integrate_scales) else 500
+
+        st.subheader("📉 合体したグラフ")
+        st.plotly_chart(merged_fig, use_container_width=True, height=fig_height, key="merged_chart_view")
 else:
     st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
