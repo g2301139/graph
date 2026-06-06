@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("グラフのタイトルや凡例（データ名）を自由にカスタマイズできるようになりました。")
+st.write("右側の凡例名（データ点の説明）を自由にカスタマイズできるようになりました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -80,10 +80,6 @@ if not df.empty:
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 🛠️【追加：グラフタイトルの設定】
-        st.subheader("グラフのタイトル設定")
-        graph_title = st.text_input("グラフのタイトルを入力してください", value="カスタムグラフ")
-
         # 縦軸（Y軸）の配置・統合設定
         st.subheader("縦軸（Y軸）の配置設定")
         
@@ -110,10 +106,10 @@ if not df.empty:
         else:
             axis_names = ["縦軸"]
 
-        # データごとの線の引き方 & 🛠️【追加：凡例名の個別カスタム設定】
+        # データごとの線の引き方 & 凡例名の個別カスタム設定
         st.subheader("表示する線と凡例名（右側の名前）の設定")
         line_styles_config = {}
-        legend_names_config = {} # 打ち替えた凡例名を保存する辞書
+        legend_names_config = {}
         
         if y_axes:
             for y_col in y_axes:
@@ -130,13 +126,12 @@ if not df.empty:
                     line_styles_config[y_col] = line_style
                 
                 with name_col:
-                    # 色分けの有無によって、入力欄の初期値を調整
                     if color_axis != "なし":
                         unique_categories = df[color_axis].unique()
                         for cat in unique_categories:
                             default_legend_name = f"{y_col} ({cat})"
                             custom_legend_name = st.text_input(
-                                f"表示名: {default_legend_name}", 
+                                f"右側に表示する名前: {default_legend_name}", 
                                 value=default_legend_name, 
                                 key=f"legname_{y_col}_{cat}"
                             )
@@ -144,7 +139,7 @@ if not df.empty:
                     else:
                         default_legend_name = y_col
                         custom_legend_name = st.text_input(
-                            f"表示名: {default_legend_name}", 
+                            f"右側に表示する名前: {default_legend_name}", 
                             value=default_legend_name, 
                             key=f"legname_{y_col}"
                         )
@@ -231,43 +226,43 @@ if not df.empty:
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
                         
-                        # 🛠️ カスタムされた凡例（右側の名前）を取得
+                        # 🛠️ 入力されたカスタム凡例名を取得
                         custom_name = legend_names_config.get(f"{y_axis}_{cat}", f"{y_axis} ({cat})")
                         
-                        fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id))
+                        # データ点のプロット（右側の凡例名にカスタム名が適用されます）
+                        fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}"))
                         
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
                             if x_t is not None: 
-                                fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{custom_name} [直線]", yaxis=yaxis_id))
+                                fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{custom_name} (直線)", yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}", showlegend=False))
                         
                         elif selected_style == "数値を自動判定した線（曲線）":
                             shape_type = determine_shape(sub_df, x_axis, y_axis)
-                            fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} [曲線]", yaxis=yaxis_id))
+                            fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}", showlegend=False))
                 else:
                     assigned_color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
                     
-                    # 🛠️ カスタムされた凡例（右側の名前）を取得
+                    # 🛠️ 入力されたカスタム凡例名を取得
                     custom_name = legend_names_config.get(y_axis, y_axis)
                     
-                    fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id))
+                    # データ点のプロット（右側の凡例名にカスタム名が適用されます）
+                    fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=y_axis))
                     
                     if selected_style == "全体の平均を通る一直線（トレンド線）":
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                         if x_t is not None: 
-                            fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{custom_name} [直線]", yaxis=yaxis_id))
+                            fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=assigned_color, dash="solid"), name=f"{custom_name} (直線)", yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
                     
                     elif selected_style == "数値を自動判定した線（曲線）":
                         shape_type = determine_shape(df, x_axis, y_axis)
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} [曲線]", yaxis=yaxis_id))
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
 
             # 左軸の間隔を確保
             xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.09)
 
-            # 🛠️ タイトルパラメータを update_args に追加
             update_args = {
-                "title": dict(text=graph_title, x=0.5, xanchor="center"), # グラフ中央上に配置
                 "xaxis": dict(
                     title=dict(text=x_axis, font=dict(color="black")), 
                     range=x_range_input, 
