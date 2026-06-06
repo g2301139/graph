@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("Plotlyの標準仕様のみでマルチ軸の文字被りを完全に回避する安全版コードです。数値も略さずフル表記されます。")
+st.write("すべてのX軸をグラフ下部に整列させ、文字被りを完全に回避した安全版コードです。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -221,50 +221,36 @@ if not df.empty:
             # 複数Y軸のためのマージン計算
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
-            # グラフ自体の枠の外側のマージンをガッツリ確保してはみ出しを防止
+            # 【下部寄せ特化】すべてのX軸が下に並ぶため、下側（b）のマージンを大幅に拡張（1軸増えるごとに+50px自動追加）
+            extra_bottom_margin = 80 + (len(x_axis_names) * 50)
             init_layout_args = {
                 "hovermode": "closest",
-                "margin": dict(t=120, b=120, l=60, r=50)
+                "margin": dict(t=50, b=extra_bottom_margin, l=60, r=50) # 上側(t)はすっきり50pxに縮小
             }
 
-            # 🛠️【完全エラー回避版マルチX軸設定】
+            # 🛠️【全X軸・下部並列化ロジック】
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
                 
-                # エラーの原因になる position や shift などのトリッキーな設定を完全廃止
                 x_dict = {
                     "range": actual_x_range,
                     "tickfont": dict(color="black"),
                     "tickformat": ".0f",
                     "domain": [left_margin_domain, 1.0],
                     "showgrid": True if i == 0 else False,
+                    "side": "bottom" # 👈 これですべての軸を強制的に「下側」へ指定
                 }
                 
                 if i == 0:
-                    # 1つ目のX軸は「下側」
-                    x_dict["side"] = "bottom"
-                    x_dict["title"] = dict(text=name, font=dict(color="black"), standoff=15)
-                elif i == 1:
-                    # 2つ目のX軸は「上側」に逃がす
-                    x_dict["overlaying"] = "x"
-                    x_dict["side"] = "top"
                     x_dict["title"] = dict(text=name, font=dict(color="black"), standoff=15)
                 else:
-                    # 3つ目・4つ目のX軸が選択された場合
                     x_dict["overlaying"] = "x"
-                    if i % 2 == 0:
-                        # 3つ目(i=2)などは下側に。
-                        # 改行タグを使って、タイトル文字列自体を物理的に下に押し下げて重なりを回避！
-                        x_dict["side"] = "bottom"
-                        break_lines = "<br>" * (i // 2)
-                        x_dict["title"] = dict(text=f"{break_lines}{name}", font=dict(color="black"))
-                    else:
-                        # 4つ目(i=3)などは上側に。
-                        # 改行タグを前に置いて、タイトルを上に引き上げます
-                        x_dict["side"] = "top"
-                        break_lines = "<br>" * ((i - 1) // 2)
-                        x_dict["title"] = dict(text=f"{name}{break_lines}", font=dict(color="black"))
+                    
+                    # 🛠️ 下に並べるための段差（改行）コントロール
+                    # 2つ目の軸なら1行分、3つ目なら2行分の空行を「タイトルの前」に入れて物理的に押し下げます
+                    break_lines = "<br>" * i
+                    x_dict["title"] = dict(text=f"{break_lines}{name}", font=dict(color="black"))
                 
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
