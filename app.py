@@ -32,7 +32,7 @@ default_paste_data = (
 )
 
 with st.form("add_data_form", clear_on_submit=True):
-    dataset_name = st.text_input("データの名前（例: 2026年第1Q、実験A など）", value=f"データセット {len(st.session_state.datasets) + 1}")
+    dataset_name = st.text_input("データの名前（例: 2026年第1Q、実験A、シェルソート など）", value=f"データセット {len(st.session_state.datasets) + 1}")
     paste_input = st.text_area(
         "Excelやスプレッドシートからデータをコピーし、下の枠内に貼り付けてください（Ctrl+V）：",
         value=default_paste_data,
@@ -116,8 +116,10 @@ if st.session_state.datasets:
                 
             col1, col2, col3 = st.columns(3)
             with col1:
+                # 貼り付けデータの「1個目」の項目を自動でX軸にする
                 x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0, key=f"x_{idx}")
             with col2:
+                # 貼り付けデータの「2個目以降」の項目をすべて初期チェック状態にする
                 default_y = [c for c in columns[1:] if c != "カテゴリー"]
                 if not default_y: default_y = [columns[0]]
                 y_axes = st.multiselect("グラフに描画するデータ列を選択", options=columns, default=default_y, key=f"y_{idx}")
@@ -128,22 +130,28 @@ if st.session_state.datasets:
             line_styles_config = {}
             legend_names_config = {}
             if y_axes:
-                st.markdown("##### 表示する線と凡例名（右側の名前）の設定")
+                st.markdown("##### 表示スタイルと右側の表示名（凡例）の設定")
                 for y_col in y_axes:
                     style_col, name_col = st.columns(2)
                     with style_col:
-                        line_style = st.selectbox(f"「{y_col}」の線の引き方", options=["マーカーのみ（線なし）", "数値を自動判定した線（曲線）", "全体の平均を通る一直線（トレンド線）"], index=1, key=f"style_{idx}_{y_col}")
+                        # 点と線をわかりやすく分離
+                        line_style = st.selectbox(
+                            f"「{y_col}」の表示スタイル", 
+                            options=["点（マーカー）のみ", "線のみ（曲線）", "点と線（両方）", "トレンド線（直線）"], 
+                            index=2, 
+                            key=f"style_{idx}_{y_col}"
+                        )
                         line_styles_config[y_col] = line_style
                     with name_col:
-                        # 初期値に「データ名」が入るように修正
+                        # 右側の表示名（初期値）をファイル名（データ名）にする
                         if color_axis != "なし":
                             for cat in df[color_axis].unique():
-                                def_name = f"[{dataset['name']}] {y_col} ({cat})"
-                                custom_name = st.text_input(f"右側の表示名: {def_name}", value=def_name, key=f"legname_{idx}_{y_col}_{cat}")
+                                def_name = f"{dataset['name']} ({cat})"
+                                custom_name = st.text_input(f"右側の表示名: {y_col}", value=def_name, key=f"legname_{idx}_{y_col}_{cat}")
                                 legend_names_config[f"{y_col}_{cat}"] = custom_name
                         else:
-                            def_name = f"[{dataset['name']}] {y_col}"
-                            custom_name = st.text_input(f"右側の表示名: {def_name}", value=def_name, key=f"legname_{idx}_{y_col}")
+                            def_name = f"{dataset['name']}"
+                            custom_name = st.text_input(f"右側の表示名: {y_col}", value=def_name, key=f"legname_{idx}_{y_col}")
                             legend_names_config[y_col] = custom_name
 
             configs[idx] = {
@@ -161,30 +169,41 @@ if st.session_state.datasets:
                 c_idx = 0
                 for y_axis in y_axes:
                     selected_style = line_styles_config.get(y_axis)
+                    
+                    # プロットモードの判定
+                    if selected_style == "点（マーカー）のみ":
+                        plot_mode = "markers"
+                    elif selected_style == "線のみ（曲線）":
+                        plot_mode = "lines"
+                    else:
+                        plot_mode = "markers+lines" # 点と線（両方）
+                        
                     if color_axis != "なし":
                         for cat in df[color_axis].unique():
                             sub_df = df[df[color_axis] == cat]
                             c_name = legend_names_config.get(f"{y_axis}_{cat}")
                             color = color_cycle[c_idx % len(color_cycle)]
                             c_idx += 1
-                            fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}_{cat}"))
-                            if selected_style == "全体の平均を通る一直線（トレンド線）":
+                            
+                            if selected_style == "トレンド線（直線）":
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}_{cat}"))
                                 x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
                                 if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", legendgroup=f"{idx}_{y_axis}_{cat}", showlegend=False))
-                            elif selected_style == "数値を自動判定した線（曲線）":
-                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", legendgroup=f"{idx}_{y_axis}_{cat}", showlegend=False))
+                            else:
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, legendgroup=f"{idx}_{y_axis}_{cat}"))
                     else:
                         c_name = legend_names_config.get(y_axis)
                         color = color_cycle[c_idx % len(color_cycle)]
                         c_idx += 1
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}"))
-                        if selected_style == "全体の平均を通る一直線（トレンド線）":
+                        
+                        if selected_style == "トレンド線（直線）":
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, legendgroup=f"{idx}_{y_axis}"))
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                             if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=f"{c_name} (直線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
-                        elif selected_style == "数値を自動判定した線（曲線）":
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
+                        else:
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, legendgroup=f"{idx}_{y_axis}"))
                 
-                # グラフのタイトルをデータの名前に設定
+                # グラフのタイトルを「データセットの名前」に設定
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     xaxis=dict(title=x_axis, tickformat="d"), 
@@ -224,7 +243,7 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
             
-            default_title = f"[{dataset['name']}] " + ", ".join(cfg["y_axes"])
+            default_title = f"{dataset['name']}"
             
             if loop_count == 0:
                 label_text = "ベースとなる左側の縦軸名（第1 Y軸）"
@@ -282,6 +301,13 @@ if st.session_state.datasets:
                 trace_xaxis = "x" if xaxis_id == "x" else xaxis_id
                 trace_yaxis = "y" if yaxis_id == "y" else yaxis_id
                 
+                if selected_style == "点（マーカー）のみ":
+                    plot_mode = "markers"
+                elif selected_style == "線のみ（曲線）":
+                    plot_mode = "lines"
+                else:
+                    plot_mode = "markers+lines"
+                
                 if color_axis != "なし":
                     for cat in df[color_axis].unique():
                         sub_df = df[df[color_axis] == cat]
@@ -289,23 +315,23 @@ if st.session_state.datasets:
                         color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                         merged_color_idx += 1
 
-                        merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
-                        if selected_style == "全体の平均を通る一直線（トレンド線）":
+                        if selected_style == "トレンド線（直線）":
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
                             if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
-                        elif selected_style == "数値を自動判定した線（曲線）":
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                        else:
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
                 else:
                     c_name = legend_names.get(y_axis)
                     color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                     merged_color_idx += 1
 
-                    merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
-                    if selected_style == "全体の平均を通る一直線（トレンド線）":
+                    if selected_style == "トレンド線（直線）":
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                         if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
-                    elif selected_style == "数値を自動判定した線（曲線）":
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                    else:
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode=plot_mode, line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), marker=dict(size=10), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
 
         right_margin = 50 + (max(0, extra_y_count) * 75)
         update_layout_args["margin"] = dict(l=80, r=right_margin)
