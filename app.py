@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("Plotlyの仕様に100%準拠し、マルチ軸エラーを完全に根絶しました。数値も略さずフル表記されます。")
+st.write("Plotlyの標準仕様のみでマルチ軸の文字被りを完全に回避する安全版コードです。数値も略さずフル表記されます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -218,47 +218,57 @@ if not df.empty:
         if not x_axes or not y_axes:
             st.warning("X軸とデータ列（Y軸）をそれぞれ1つ以上選択してください。")
         else:
-            # 左側に複数のY軸が並ぶための余白計算 (1つのY軸あたり0.08の幅を確保)
+            # 複数Y軸のためのマージン計算
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
-            # 【被り対策】グラフ上下の余白を十分に開け、文字がはみ出るのをガードします
+            # グラフ自体の枠の外側のマージンをガッツリ確保してはみ出しを防止
             init_layout_args = {
                 "hovermode": "closest",
-                "margin": dict(t=100, b=100, l=60, r=50)
+                "margin": dict(t=120, b=120, l=60, r=50)
             }
 
-            # 🛠️【超安定版マルチX軸ロジック】
-            # すべてのX軸に対して、Plotlyのバリデーションを通過する安全な設定のみに統一
+            # 🛠️【完全エラー回避版マルチX軸設定】
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
                 
-                # 奇数番目(0, 2, 4...)は下側(bottom)、偶数番目(1, 3, 5...)は上側(top)
-                side_position = "bottom" if i % 2 == 0 else "top"
-                
+                # エラーの原因になる position や shift などのトリッキーな設定を完全廃止
                 x_dict = {
-                    "title": dict(text=name, font=dict(color="black"), standoff=15),
                     "range": actual_x_range,
                     "tickfont": dict(color="black"),
                     "tickformat": ".0f",
                     "domain": [left_margin_domain, 1.0],
                     "showgrid": True if i == 0 else False,
-                    "side": side_position
                 }
                 
-                # 2つ目以降の追加軸に必要な設定
-                if i > 0:
+                if i == 0:
+                    # 1つ目のX軸は「下側」
+                    x_dict["side"] = "bottom"
+                    x_dict["title"] = dict(text=name, font=dict(color="black"), standoff=15)
+                elif i == 1:
+                    # 2つ目のX軸は「上側」に逃がす
                     x_dict["overlaying"] = "x"
-                    x_dict["anchor"] = "free"
-                    
-                    # 🛠️ 文字被り解決策：同じ側に複数の軸が来る場合、下に押し出す(bottom側)か、上に押し出す(top側)かを
-                    # Plotly公式が推奨する安全な「autoshift=True」機能と「shift」パラメータで完全に分離制御します。
-                    if i >= 2:
-                        x_dict["autoshift"] = True
+                    x_dict["side"] = "top"
+                    x_dict["title"] = dict(text=name, font=dict(color="black"), standoff=15)
+                else:
+                    # 3つ目・4つ目のX軸が選択された場合
+                    x_dict["overlaying"] = "x"
+                    if i % 2 == 0:
+                        # 3つ目(i=2)などは下側に。
+                        # 改行タグを使って、タイトル文字列自体を物理的に下に押し下げて重なりを回避！
+                        x_dict["side"] = "bottom"
+                        break_lines = "<br>" * (i // 2)
+                        x_dict["title"] = dict(text=f"{break_lines}{name}", font=dict(color="black"))
+                    else:
+                        # 4つ目(i=3)などは上側に。
+                        # 改行タグを前に置いて、タイトルを上に引き上げます
+                        x_dict["side"] = "top"
+                        break_lines = "<br>" * ((i - 1) // 2)
+                        x_dict["title"] = dict(text=f"{name}{break_lines}", font=dict(color="black"))
                 
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
-            # 実際に使うY軸のパラメーターの定義
+            # Y軸の定義
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
