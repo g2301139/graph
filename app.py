@@ -183,7 +183,6 @@ if st.session_state.datasets:
                         elif selected_style == "数値を自動判定した線（曲線）":
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
                 
-                # 数値を省略させない設定（個別グラフ）
                 fig.update_layout(
                     xaxis=dict(title=x_axis, tickformat="d"), 
                     yaxis=dict(title="値", tickformat="d"), 
@@ -221,38 +220,35 @@ if st.session_state.datasets:
                 index=0
             )
         with cc2:
-            # どちらも合わせないモード以外では、統合チェックボックスを有効化
             if match_mode != "❌ どちらも合わせない（X軸・Y軸どちらも新しく追加していく）":
                 integrate_scales = st.checkbox("増える軸の目盛り（スケール）を1つに統合する", value=False)
             else:
                 integrate_scales = False
-                st.caption("※『どちらも合わせない』モードでは、データごとに独立した軸名と目盛りが作成されます。")
+                st.caption("※『どちらも合わせない』モードでは、すべての軸名と目盛が独立して作成されます。")
 
-        # 描画用変数の準備
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Alphabet
         merged_color_idx = 0
         update_layout_args = {"hovermode": "closest"}
         
-        extra_x_count = 0  # 追加されたX軸の数
-        extra_y_count = 0  # 追加されたY軸の数
+        extra_x_count = 0  
+        extra_y_count = 0  
 
-        # プロット処理ループ
         for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            x_axis_name = cfg["x_axis"] # もともとのX軸名
-            y_axis_name = ", ".join(cfg["y_axes"]) # もともとのY軸名（複数ある場合はカンマ区切り）
+            x_axis_name = cfg["x_axis"] 
+            y_axis_name = ", ".join(cfg["y_axes"]) 
             
             x_axis = cfg["x_axis"]
             color_axis = cfg["color_axis"]
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 軸の割り当てと、名前をオリジナルと同じにするロジック ---
+            # --- 修正された軸割り当てロジック ---
             if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 xaxis_id = "x"
                 if loop_count == 0:
@@ -265,12 +261,12 @@ if st.session_state.datasets:
                 else:
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
-                    pos_offset = 1.0 + (extra_y_count - 1) * 0.06
+                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
-                        title=dict(text=y_axis_name), # もともとの軸名
-                        tickformat="d", # 数値を略さない設定
+                        title=dict(text=y_axis_name),
+                        tickformat="d",
                         overlaying="y",
-                        side="right", # Y軸が増える時は右側へ
+                        side="right", # ご要望通り、追加されるY軸は右側へ
                         anchor="free",
                         position=pos_offset
                     )
@@ -278,6 +274,7 @@ if st.session_state.datasets:
             elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
                 yaxis_id = "y"
                 if loop_count == 0:
+                    # 最初の基本Y軸は「左側」
                     update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
                 
                 if loop_count == 0 or integrate_scales:
@@ -285,19 +282,21 @@ if st.session_state.datasets:
                     if loop_count == 0:
                         update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 else:
-                    extra_x_count += 1
-                    xaxis_id = f"x{extra_x_count + 1}"
-                    pos_offset = 0.0 - (extra_x_count * 0.08)
-                    update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
-                        title=dict(text=x_axis_name), # もともとの軸名
-                        tickformat="d", # 数値を略さない設定
-                        overlaying="x",
-                        side="bottom", # X軸が増える時は下側へ
+                    # Y軸は合っている（同じ）だけど目盛を統合しない場合、Y軸を右側に増やす
+                    extra_y_count += 1
+                    yaxis_id = f"y{extra_y_count + 1}"
+                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
+                    update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
+                        title=dict(text=y_axis_name),
+                        tickformat="d",
+                        overlaying="y",
+                        side="right", # 軸の名前と目盛は右側に増える
                         anchor="free",
                         position=pos_offset
                     )
+                    xaxis_id = "x" # X軸は共通
                     
-            else: # 「❌ どちらも合わせない」独立ペア追加モード
+            else: # 「❌ どちらも合わせない」の場合
                 if loop_count == 0:
                     xaxis_id = "x"
                     yaxis_id = "y"
@@ -309,23 +308,23 @@ if st.session_state.datasets:
                     xaxis_id = f"x{extra_x_count + 1}"
                     yaxis_id = f"y{extra_y_count + 1}"
                     
-                    # 新しいX軸を下側に配置
+                    # X軸は下側に下層として増やす
                     x_pos_offset = 0.0 - (extra_x_count * 0.08)
                     update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
-                        title=dict(text=x_axis_name), # もともとの軸名
+                        title=dict(text=x_axis_name),
                         tickformat="d",
                         overlaying="x",
                         side="bottom",
                         anchor="free",
                         position=x_pos_offset
                     )
-                    # 新しいY軸を右側に配置
-                    y_pos_offset = 1.0 + (extra_y_count - 1) * 0.06
+                    # Y軸は右側にどんどん並ぶように増やす
+                    y_pos_offset = 1.0 + (extra_y_count - 1) * 0.08
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
-                        title=dict(text=y_axis_name), # もともとの軸名
+                        title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="right",
+                        side="right", # 右側に増やす
                         anchor="free",
                         position=y_pos_offset
                     )
@@ -334,6 +333,10 @@ if st.session_state.datasets:
             for y_axis in cfg["y_axes"]:
                 selected_style = line_styles.get(y_axis)
                 
+                # Plotlyに新しい軸を認識させるためのキーワード設定形式に補正
+                trace_xaxis = "x" if xaxis_id == "x" else xaxis_id
+                trace_yaxis = "y" if yaxis_id == "y" else yaxis_id
+                
                 if color_axis != "なし":
                     for cat in df[color_axis].unique():
                         sub_df = df[df[color_axis] == cat]
@@ -341,35 +344,38 @@ if st.session_state.datasets:
                         color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                         merged_color_idx += 1
 
-                        merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
+                        merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}"))
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
-                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                            if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
                         elif selected_style == "数値を自動判定した線（曲線）":
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}_{cat}", showlegend=False))
                 else:
                     c_name = legend_names.get(y_axis)
                     color = color_cycle_merged[merged_color_idx % len(color_cycle_merged)]
                     merged_color_idx += 1
 
-                    merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}"))
+                    merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=c_name, xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}"))
                     if selected_style == "全体の平均を通る一直線（トレンド線）":
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
-                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                        if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
                     elif selected_style == "数値を自動判定した線（曲線）":
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
-        # 軸を統合する場合のラベル上書き（統合モードの時のみ）
         if integrate_scales:
             if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
             elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
-                update_layout_args["xaxis"] = dict(title="共通横軸 (X)", tickformat="d", side="bottom")
+                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
 
-        # レイアウト更新と描画
+        # レイアウト全体の右側余白を、軸が増えた分だけ自動拡張して文字切れを防ぐ
+        right_margin = 80 + (extra_y_count * 60)
+        update_layout_args["margin"] = dict(r=right_margin)
+
+        # 軸が増えても崩れないよう最終適用
         merged_fig.update_layout(**update_layout_args)
         
-        # 下側に軸が増える場合は高さを出す
+        # 下側にX軸が増える場合のみ、高さを自動拡張
         fig_height = 500 + (extra_x_count * 45)
 
         st.subheader("📉 合体したグラフ")
