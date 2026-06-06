@@ -218,15 +218,13 @@ if not df.empty:
         if not x_axes or not y_axes:
             st.warning("X軸とデータ列（Y軸）をそれぞれ1つ以上選択してください。")
         else:
-            # 🛠️【超重要：エラーの根本対策】
-            # 後からレイアウト辞書を変更すると型チェックで弾かれるため、最初から全構造を持ったLayoutオブジェクトを直接生成する
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
             init_layout_args = {
                 "hovermode": "closest"
             }
 
-            # 実際に使うX軸のパラメーターをあらかじめ定義
+            # 🛠️【修正箇所】マルチX軸のパラメータ定義（エラーが出ないよう構成を変更）
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
@@ -243,7 +241,7 @@ if not df.empty:
                     x_dict.update({
                         "overlaying": "x",
                         "anchor": "free",
-                        "position": -0.07 * i
+                        "side": "bottom" if i % 2 == 0 else "top"  # 上下に交互配置して重なりを防ぐ
                     })
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
@@ -269,7 +267,7 @@ if not df.empty:
                     })
                 init_layout_args[axis_key] = go.layout.YAxis(**y_dict)
 
-            # 🛠️ ここで「最初からマルチ軸が組み込まれた状態」のFigureを組み立てる（これでValueErrorを完全に回避）
+            # 最初からマルチ軸が組み込まれた状態のFigureを組み立てる
             fig = go.Figure(layout=go.Layout(**init_layout_args))
 
             color_cycle = px.colors.qualitative.Plotly
