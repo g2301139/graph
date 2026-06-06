@@ -248,7 +248,7 @@ if st.session_state.datasets:
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 修正された軸割り当てロジック ---
+            # --- 【完全修正】軸配置の割当バグを修正したロジック ---
             if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 xaxis_id = "x"
                 if loop_count == 0:
@@ -261,20 +261,21 @@ if st.session_state.datasets:
                 else:
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
-                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
+                    # 左側に軸をずらして追加していく
+                    pos_offset = 0.0 - (extra_y_count * 0.08)
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="right", # ご要望通り、追加されるY軸は右側へ
+                        side="left", 
                         anchor="free",
                         position=pos_offset
                     )
             
             elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
+                # Y軸（縦軸）はすべて左側の1本の共通軸に重ね合わせる
                 yaxis_id = "y"
                 if loop_count == 0:
-                    # 最初の基本Y軸は「左側」
                     update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
                 
                 if loop_count == 0 or integrate_scales:
@@ -282,19 +283,18 @@ if st.session_state.datasets:
                     if loop_count == 0:
                         update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 else:
-                    # Y軸は合っている（同じ）だけど目盛を統合しない場合、Y軸を右側に増やす
-                    extra_y_count += 1
-                    yaxis_id = f"y{extra_y_count + 1}"
-                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
-                    update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
-                        title=dict(text=y_axis_name),
+                    # 【修正バグ箇所】X軸を独立させて下部（bottom）に増やしていく処理に修正
+                    extra_x_count += 1
+                    xaxis_id = f"x{extra_x_count + 1}"
+                    pos_offset = 0.0 - (extra_x_count * 0.09)
+                    update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
+                        title=dict(text=x_axis_name),
                         tickformat="d",
-                        overlaying="y",
-                        side="right", # 軸の名前と目盛は右側に増える
+                        overlaying="x",
+                        side="bottom",  # 右側ではなく、下側に段々で追加
                         anchor="free",
                         position=pos_offset
                     )
-                    xaxis_id = "x" # X軸は共通
                     
             else: # 「❌ どちらも合わせない」の場合
                 if loop_count == 0:
@@ -308,8 +308,8 @@ if st.session_state.datasets:
                     xaxis_id = f"x{extra_x_count + 1}"
                     yaxis_id = f"y{extra_y_count + 1}"
                     
-                    # X軸は下側に下層として増やす
-                    x_pos_offset = 0.0 - (extra_x_count * 0.08)
+                    # X軸は下側に増やす
+                    x_pos_offset = 0.0 - (extra_x_count * 0.09)
                     update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
                         title=dict(text=x_axis_name),
                         tickformat="d",
@@ -318,13 +318,13 @@ if st.session_state.datasets:
                         anchor="free",
                         position=x_pos_offset
                     )
-                    # Y軸は右側にどんどん並ぶように増やす
-                    y_pos_offset = 1.0 + (extra_y_count - 1) * 0.08
+                    # Y軸は左側に増やす
+                    y_pos_offset = 0.0 - (extra_y_count * 0.08)
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="right", # 右側に増やす
+                        side="left", 
                         anchor="free",
                         position=y_pos_offset
                     )
@@ -332,8 +332,6 @@ if st.session_state.datasets:
             # データのプロット
             for y_axis in cfg["y_axes"]:
                 selected_style = line_styles.get(y_axis)
-                
-                # Plotlyに新しい軸を認識させるためのキーワード設定形式に補正
                 trace_xaxis = "x" if xaxis_id == "x" else xaxis_id
                 trace_yaxis = "y" if yaxis_id == "y" else yaxis_id
                 
@@ -363,20 +361,18 @@ if st.session_state.datasets:
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
         if integrate_scales:
-            if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
-                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
-            elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
+            if match_mode in ["X軸（横軸）のみを合わせて、Y軸を追加していく", "Y軸（縦軸）のみを合わせて、X軸を追加していく"]:
                 update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
 
-        # レイアウト全体の右側余白を、軸が増えた分だけ自動拡張して文字切れを防ぐ
-        right_margin = 80 + (extra_y_count * 60)
-        update_layout_args["margin"] = dict(r=right_margin)
+        # 左側にY軸が増えるモードの時だけ、左側マージンを動的に広げる
+        left_margin = 80 + (extra_y_count * 75)
+        update_layout_args["margin"] = dict(l=left_margin, r=50)
 
-        # 軸が増えても崩れないよう最終適用
+        # レイアウト適用
         merged_fig.update_layout(**update_layout_args)
         
-        # 下側にX軸が増える場合のみ、高さを自動拡張
-        fig_height = 500 + (extra_x_count * 45)
+        # 下側にX軸が増える場合は高さを自動拡張して重なりを防ぐ
+        fig_height = 500 + (extra_x_count * 55)
 
         st.subheader("📉 合体したグラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=fig_height, key="merged_chart_view")
