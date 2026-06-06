@@ -116,10 +116,8 @@ if st.session_state.datasets:
                 
             col1, col2, col3 = st.columns(3)
             with col1:
-                # 貼り付けデータの最初の列を初期値にする
                 x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0, key=f"x_{idx}")
             with col2:
-                # 貼り付けデータの2番目以降（かつカテゴリー以外の列）を初期選択にする
                 default_y = [c for c in columns[1:] if c != "カテゴリー"]
                 if not default_y: default_y = [columns[0]]
                 y_axes = st.multiselect("グラフに描画するデータ列を選択", options=columns, default=default_y, key=f"y_{idx}")
@@ -137,6 +135,7 @@ if st.session_state.datasets:
                         line_style = st.selectbox(f"「{y_col}」の線の引き方", options=["マーカーのみ（線なし）", "数値を自動判定した線（曲線）", "全体の平均を通る一直線（トレンド線）"], index=1, key=f"style_{idx}_{y_col}")
                         line_styles_config[y_col] = line_style
                     with name_col:
+                        # 初期値に「データ名」が入るように修正
                         if color_axis != "なし":
                             for cat in df[color_axis].unique():
                                 def_name = f"[{dataset['name']}] {y_col} ({cat})"
@@ -185,9 +184,9 @@ if st.session_state.datasets:
                         elif selected_style == "数値を自動判定した線（曲線）":
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
                 
-                # グラフの名前を「データセットの名前」に変更
+                # グラフのタイトルをデータの名前に設定
                 fig.update_layout(
-                    title=dict(text=f"📊 {dataset['name']}", font=dict(size=18)),
+                    title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     xaxis=dict(title=x_axis, tickformat="d"), 
                     yaxis=dict(title="値", tickformat="d"), 
                     hovermode="closest"
@@ -215,18 +214,16 @@ if st.session_state.datasets:
         st.subheader("② 目盛り（スケール）と縦軸名の設定")
         integrate_scales = st.checkbox("データごとに異なるY軸にせず、すべてのデータでY軸の目盛りを1つに統合する", value=False)
 
-        # 縦軸の名前を変更するためのテキスト入力欄を動的に作成
+        # 縦軸の名前を変更するためのテキスト入力欄
         st.markdown("✏️ **縦軸（Y軸）のラベル名編集**")
         custom_axis_titles = {}
         
-        # 軸名の編集用UIを並べるためのループ
         axis_label_idx = 0
         for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
             
-            # デフォルトの軸名を生成
             default_title = f"[{dataset['name']}] " + ", ".join(cfg["y_axes"])
             
             if loop_count == 0:
@@ -235,7 +232,7 @@ if st.session_state.datasets:
             elif not integrate_scales:
                 axis_label_idx += 1
                 label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸）"
-                custom_axis_titles[f"y{axis_label_idx + 1}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{axis_label_idx + 1}")
+                custom_axis_titles[f"y_axis_{idx}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{idx}")
 
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Alphabet
@@ -256,7 +253,7 @@ if st.session_state.datasets:
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 軸の配置ロジック（X軸のみ共通化） ---
+            # --- 軸の配置ロジック ---
             xaxis_id = "x"
             if loop_count == 0:
                 update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
@@ -269,10 +266,9 @@ if st.session_state.datasets:
                 extra_y_count += 1
                 yaxis_id = f"y{extra_y_count + 1}"
                 
-                # 最初は「左側」、2つ目以降に追加されるY軸は「右側」へ順番にオフセット配置
                 pos_offset = 1.0 + ((extra_y_count - 1) * 0.08)
                 update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
-                    title=dict(text=custom_axis_titles.get(yaxis_id, f"縦軸 {extra_y_count + 1}")),
+                    title=dict(text=custom_axis_titles.get(f"y_axis_{idx}", f"縦軸 {extra_y_count + 1}")),
                     tickformat="d",
                     overlaying="y",
                     side="right", 
@@ -311,7 +307,6 @@ if st.session_state.datasets:
                     elif selected_style == "数値を自動判定した線（曲線）":
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
-        # 右側に軸が増えるため、グラフの「右側の余白（r）」を動的に広げる設定
         right_margin = 50 + (max(0, extra_y_count) * 75)
         update_layout_args["margin"] = dict(l=80, r=right_margin)
 
