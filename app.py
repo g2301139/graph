@@ -24,11 +24,11 @@ st.header("1. データの入力と管理")
 
 default_paste_data = (
     "X軸データ\t売上\t利益\t目標値\tカテゴリー\n"
-    "1\t10\t2\t8\tA\n"
-    "2\t12\t5\t10\tB\n"
-    "3\t18\t4\t15\tA\n"
-    "4\t20\t8\t18\tB\n"
-    "5\t26\t7\t22\tA"
+    "1000000\t10000000\t2\t8\tA\n"
+    "2000000\t12000000\t5\t10\tB\n"
+    "3000000\t18000000\t4\t15\tA\n"
+    "4000000\t20000000\t8\t18\tB\n"
+    "5000000\t26000000\t7\t22\tA"
 )
 
 with st.form("add_data_form", clear_on_submit=True):
@@ -183,7 +183,12 @@ if st.session_state.datasets:
                         elif selected_style == "数値を自動判定した線（曲線）":
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=f"{c_name} (曲線)", legendgroup=f"{idx}_{y_axis}", showlegend=False))
                 
-                fig.update_layout(xaxis=dict(title=x_axis), yaxis=dict(title="値"), hovermode="closest")
+                # 数値を省略させない設定（個別グラフ）
+                fig.update_layout(
+                    xaxis=dict(title=x_axis, tickformat="d"), 
+                    yaxis=dict(title="値", tickformat="d"), 
+                    hovermode="closest"
+                )
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
@@ -192,7 +197,6 @@ if st.session_state.datasets:
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
     
-    # 3-1. 合体対象の選択
     st.subheader("① 合体するデータセットの選択")
     selected_indices = []
     cb_cols = st.columns(len(st.session_state.datasets))
@@ -204,17 +208,25 @@ if st.session_state.datasets:
     if len(selected_indices) < 1:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
-        # 3-2. 合体基準の選択（X軸をあわせるか、Y軸をあわせるか）
         st.subheader("② 合体の基準と軸の設定")
         cc1, cc2 = st.columns(2)
         with cc1:
             match_mode = st.radio(
-                "どちらの軸を共通（ベース）にして合体させますか？",
-                options=["X軸（横軸）を合わせて、Y軸（縦軸）を追加していく", "Y軸（縦軸）を合わせて、X軸（横軸）を追加していく"],
+                "どの軸を共通（ベース）にして合体させますか？",
+                options=[
+                    "X軸（横軸）のみを合わせて、Y軸を追加していく", 
+                    "Y軸（縦軸）のみを合わせて、X軸を追加していく",
+                    "❌ どちらも合わせない（X軸・Y軸どちらも新しく追加していく）"
+                ],
                 index=0
             )
         with cc2:
-            integrate_scales = st.checkbox("増える軸の目盛り（スケール）を1つに統合する", value=False)
+            # どちらも合わせないモード以外では、統合チェックボックスを有効化
+            if match_mode != "❌ どちらも合わせない（X軸・Y軸どちらも新しく追加していく）":
+                integrate_scales = st.checkbox("増える軸の目盛り（スケール）を1つに統合する", value=False)
+            else:
+                integrate_scales = False
+                st.caption("※『どちらも合わせない』モードでは、データごとに独立した軸名と目盛りが作成されます。")
 
         # 描画用変数の準備
         merged_fig = go.Figure()
@@ -222,7 +234,8 @@ if st.session_state.datasets:
         merged_color_idx = 0
         update_layout_args = {"hovermode": "closest"}
         
-        extra_axis_count = 0  # 追加された軸の数
+        extra_x_count = 0  # 追加されたX軸の数
+        extra_y_count = 0  # 追加されたY軸の数
 
         # プロット処理ループ
         for loop_count, idx in enumerate(selected_indices):
@@ -231,59 +244,91 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
+            x_axis_name = cfg["x_axis"] # もともとのX軸名
+            y_axis_name = ", ".join(cfg["y_axes"]) # もともとのY軸名（複数ある場合はカンマ区切り）
+            
             x_axis = cfg["x_axis"]
             color_axis = cfg["color_axis"]
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 軸の割り当てロジック ---
-            if match_mode == "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく":
-                # X軸はすべて共通（xaxis='x'）
+            # --- 軸の割り当てと、名前をオリジナルと同じにするロジック ---
+            if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 xaxis_id = "x"
+                if loop_count == 0:
+                    update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 
                 if loop_count == 0 or integrate_scales:
                     yaxis_id = "y"
-                    # 最初の基本Y軸設定
                     if loop_count == 0:
-                        update_layout_args["yaxis"] = dict(title="基本縦軸 (Y)", side="left")
+                        update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
                 else:
-                    # 2つ目以降で統合しない場合、右側にY軸を追加していく
-                    extra_axis_count += 1
-                    yaxis_id = f"y{extra_axis_count + 1}"
-                    
-                    # 右側に追加するY軸の配置（重ならないようにpositionを右側にシフト）
-                    pos_offset = 1.0 + (extra_axis_count - 1) * 0.06
-                    update_layout_args[f"yaxis{extra_axis_count + 1}"] = dict(
-                        title=dict(text=f"{dataset['name']} の縦軸 (Y)"),
+                    extra_y_count += 1
+                    yaxis_id = f"y{extra_y_count + 1}"
+                    pos_offset = 1.0 + (extra_y_count - 1) * 0.06
+                    update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
+                        title=dict(text=y_axis_name), # もともとの軸名
+                        tickformat="d", # 数値を略さない設定
                         overlaying="y",
-                        side="right",
+                        side="right", # Y軸が増える時は右側へ
                         anchor="free",
                         position=pos_offset
                     )
             
-            else: # 「Y軸（縦軸）を合わせて、X軸（横軸）を追加していく」場合
-                # Y軸はすべて共通（yaxis='y'）
+            elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
                 yaxis_id = "y"
+                if loop_count == 0:
+                    update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
                 
                 if loop_count == 0 or integrate_scales:
                     xaxis_id = "x"
                     if loop_count == 0:
-                        update_layout_args["xaxis"] = dict(title="基本横軸 (X)", side="bottom")
+                        update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 else:
-                    # 2つ目以降で統合しない場合、下側にX軸を追加していく
-                    extra_axis_count += 1
-                    xaxis_id = f"x{extra_axis_count + 1}"
-                    
-                    # 下側に追加するX軸の配置（重ならないようにpositionをさらに下側にシフト）
-                    pos_offset = 0.0 - (extra_axis_count * 0.08)
-                    update_layout_args[f"xaxis{extra_axis_count + 1}"] = dict(
-                        title=dict(text=f"{dataset['name']} の横軸 (X)"),
+                    extra_x_count += 1
+                    xaxis_id = f"x{extra_x_count + 1}"
+                    pos_offset = 0.0 - (extra_x_count * 0.08)
+                    update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
+                        title=dict(text=x_axis_name), # もともとの軸名
+                        tickformat="d", # 数値を略さない設定
                         overlaying="x",
-                        side="bottom",
+                        side="bottom", # X軸が増える時は下側へ
                         anchor="free",
                         position=pos_offset
                     )
-            # ---------------------------
+                    
+            else: # 「❌ どちらも合わせない」独立ペア追加モード
+                if loop_count == 0:
+                    xaxis_id = "x"
+                    yaxis_id = "y"
+                    update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
+                    update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
+                else:
+                    extra_x_count += 1
+                    extra_y_count += 1
+                    xaxis_id = f"x{extra_x_count + 1}"
+                    yaxis_id = f"y{extra_y_count + 1}"
+                    
+                    # 新しいX軸を下側に配置
+                    x_pos_offset = 0.0 - (extra_x_count * 0.08)
+                    update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
+                        title=dict(text=x_axis_name), # もともとの軸名
+                        tickformat="d",
+                        overlaying="x",
+                        side="bottom",
+                        anchor="free",
+                        position=x_pos_offset
+                    )
+                    # 新しいY軸を右側に配置
+                    y_pos_offset = 1.0 + (extra_y_count - 1) * 0.06
+                    update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
+                        title=dict(text=y_axis_name), # もともとの軸名
+                        tickformat="d",
+                        overlaying="y",
+                        side="right",
+                        anchor="free",
+                        position=y_pos_offset
+                    )
 
             # データのプロット
             for y_axis in cfg["y_axes"]:
@@ -314,18 +359,18 @@ if st.session_state.datasets:
                     elif selected_style == "数値を自動判定した線（曲線）":
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
-        # 軸を統合する場合の代表ラベル設定
+        # 軸を統合する場合のラベル上書き（統合モードの時のみ）
         if integrate_scales:
-            if match_mode == "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく":
-                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", side="left")
-            else:
-                update_layout_args["xaxis"] = dict(title="共通横軸 (X)", side="bottom")
+            if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
+                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
+            elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
+                update_layout_args["xaxis"] = dict(title="共通横軸 (X)", tickformat="d", side="bottom")
 
         # レイアウト更新と描画
         merged_fig.update_layout(**update_layout_args)
         
-        # 軸が増えたときにグラフが潰れないよう、下側に軸が増える場合は少し高さを出す
-        fig_height = 500 + (extra_axis_count * 40) if (match_mode != "X軸（横軸）を合わせて、Y軸（縦軸）を追加していく" and not integrate_scales) else 500
+        # 下側に軸が増える場合は高さを出す
+        fig_height = 500 + (extra_x_count * 45)
 
         st.subheader("📉 合体したグラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=fig_height, key="merged_chart_view")
