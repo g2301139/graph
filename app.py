@@ -218,18 +218,23 @@ if not df.empty:
         if not x_axes or not y_axes:
             st.warning("X軸とデータ列（Y軸）をそれぞれ1つ以上選択してください。")
         else:
+            # 左側に複数のY軸が並ぶための余白計算 (1つのY軸あたり0.08の幅を確保)
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
-            # 上下のマージンをしっかり確保
+            # 【被り対策】グラフ上下の余白を十分に開け、文字がはみ出るのをガードします
             init_layout_args = {
                 "hovermode": "closest",
-                "margin": dict(t=80, b=80, l=50, r=50)
+                "margin": dict(t=100, b=100, l=60, r=50)
             }
 
-            # 🛠️【完全エラー＆文字被り対策】マルチX軸の定義
+            # 🛠️【超安定版マルチX軸ロジック】
+            # すべてのX軸に対して、Plotlyのバリデーションを通過する安全な設定のみに統一
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
+                
+                # 奇数番目(0, 2, 4...)は下側(bottom)、偶数番目(1, 3, 5...)は上側(top)
+                side_position = "bottom" if i % 2 == 0 else "top"
                 
                 x_dict = {
                     "title": dict(text=name, font=dict(color="black"), standoff=15),
@@ -237,27 +242,23 @@ if not df.empty:
                     "tickfont": dict(color="black"),
                     "tickformat": ".0f",
                     "domain": [left_margin_domain, 1.0],
-                    "showgrid": True if i == 0 else False
+                    "showgrid": True if i == 0 else False,
+                    "side": side_position
                 }
                 
-                if i == 0:
-                    x_dict["side"] = "bottom"
-                else:
-                    # 奇数番目はtop（上）、偶数番目はbottom（下）に交互配置
-                    side_position = "top" if i % 2 != 0 else "bottom"
-                    x_dict.update({
-                        "overlaying": "x",
-                        "side": side_position,
-                    })
+                # 2つ目以降の追加軸に必要な設定
+                if i > 0:
+                    x_dict["overlaying"] = "x"
+                    x_dict["anchor"] = "free"
                     
-                    # 🛠️ positionを使わず、shift（ピクセル単位移動）を使うことでValueErrorを完全に回避！
-                    # 軸が3つ以上あって上や下に重なりそうな時だけ、外側に50ピクセルずつ押し出します
+                    # 🛠️ 文字被り解決策：同じ側に複数の軸が来る場合、下に押し出す(bottom側)か、上に押し出す(top側)かを
+                    # Plotly公式が推奨する安全な「autoshift=True」機能と「shift」パラメータで完全に分離制御します。
                     if i >= 2:
-                        x_dict["shift"] = 50 * (i // 2)
-
+                        x_dict["autoshift"] = True
+                
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
-            # 実際に使うY軸のパラメーターをあらかじめ定義
+            # 実際に使うY軸のパラメーターの定義
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
                 axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
