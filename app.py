@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("すべてのX軸をグラフ下部に整列させ、文字被りを完全に回避した安全版コードです。")
+st.write("凡例名（右側の名前）の入力ボックスを完全に独立化させました。1つ1つの名前を個別に変更可能です。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -129,7 +129,7 @@ if not df.empty:
         else:
             axis_names = ["縦軸"]
 
-        # 表示オプションと個別カスタム
+        # 🛠️【完全独立化】表示する線と凡例名（右側の名前）の設定
         st.subheader("表示する線と凡例名（右側の名前）の設定")
         line_styles_config = {}
         legend_names_config = {}
@@ -150,21 +150,27 @@ if not df.empty:
                 
                 with name_col:
                     if color_axis != "なし":
+                        # 色分けのカテゴリー一覧を取得
                         unique_categories = df[color_axis].unique()
                         for cat in unique_categories:
+                            # 1つ1つ絶対に重複しないシステムキー（uniq_key）を作成して入力欄を完全分離
+                            uniq_key = f"input_legend_{y_col}_{color_axis}_{cat}"
                             default_legend_name = f"{y_col} ({cat})"
+                            
                             custom_legend_name = st.text_input(
                                 f"右側に表示する名前: {default_legend_name}", 
                                 value=default_legend_name, 
-                                key=f"legname_{y_col}_{cat}"
+                                key=uniq_key
                             )
+                            # 保存用辞書には「データ名_カテゴリ名」をキーにして格納
                             legend_names_config[f"{y_col}_{cat}"] = custom_legend_name
                     else:
+                        uniq_key = f"input_legend_{y_col}_none"
                         default_legend_name = y_col
                         custom_legend_name = st.text_input(
                             f"右側に表示する名前: {default_legend_name}", 
                             value=default_legend_name, 
-                            key=f"legname_{y_col}"
+                            key=uniq_key
                         )
                         legend_names_config[y_col] = custom_legend_name
 
@@ -218,17 +224,16 @@ if not df.empty:
         if not x_axes or not y_axes:
             st.warning("X軸とデータ列（Y軸）をそれぞれ1つ以上選択してください。")
         else:
-            # 複数Y軸のためのマージン計算
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
-            # 【下部寄せ特化】すべてのX軸が下に並ぶため、下側（b）のマージンを大幅に拡張（1軸増えるごとに+50px自動追加）
+            # すべてのX軸が下に並ぶため、下側（b）のマージンを自動計算
             extra_bottom_margin = 80 + (len(x_axis_names) * 50)
             init_layout_args = {
                 "hovermode": "closest",
-                "margin": dict(t=50, b=extra_bottom_margin, l=60, r=50) # 上側(t)はすっきり50pxに縮小
+                "margin": dict(t=50, b=extra_bottom_margin, l=60, r=50)
             }
 
-            # 🛠️【全X軸・下部並列化ロジック】
+            # 全X軸・下部並列化
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
@@ -239,16 +244,13 @@ if not df.empty:
                     "tickformat": ".0f",
                     "domain": [left_margin_domain, 1.0],
                     "showgrid": True if i == 0 else False,
-                    "side": "bottom" # 👈 これですべての軸を強制的に「下側」へ指定
+                    "side": "bottom"
                 }
                 
                 if i == 0:
                     x_dict["title"] = dict(text=name, font=dict(color="black"), standoff=15)
                 else:
                     x_dict["overlaying"] = "x"
-                    
-                    # 🛠️ 下に並べるための段差（改行）コントロール
-                    # 2つ目の軸なら1行分、3つ目なら2行分の空行を「タイトルの前」に入れて物理的に押し下げます
                     break_lines = "<br>" * i
                     x_dict["title"] = dict(text=f"{break_lines}{name}", font=dict(color="black"))
                 
@@ -297,11 +299,9 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            max_pairs = max(len(x_axes), len(y_axes))
-            
-            for idx_loop in range(max_pairs):
-                x_axis = x_axes[min(idx_loop, len(x_axes) - 1)]
-                y_axis = y_axes[min(idx_loop, len(y_axes) - 1)]
+            # 描画ループ
+            for y_idx, y_axis in enumerate(y_axes):
+                x_axis = x_axes[min(y_idx, len(x_axes) - 1)]
                 
                 x_mapping = data_x_axis_mapping.get(x_axis)
                 if not x_mapping: continue
@@ -321,6 +321,8 @@ if not df.empty:
                         assigned_color = color_cycle[color_idx % len(color_cycle)]
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
+                        
+                        # 保存された独立な名前設定を正しく適用
                         custom_name = legend_names_config.get(f"{y_axis}_{cat}", f"{y_axis} ({cat})")
                         
                         fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}"))
