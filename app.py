@@ -220,20 +220,19 @@ if not df.empty:
         else:
             left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
             
-            # 文字被りを防ぐために全体の上下余白を大きく確保する
+            # 上下のマージンをしっかり確保
             init_layout_args = {
                 "hovermode": "closest",
-                "margin": dict(t=100, b=100, l=50, r=50) # 上(t)と下(b)の余白を広げて上部・下部の軸文字が入るスペースを作ります
+                "margin": dict(t=80, b=80, l=50, r=50)
             }
 
-            # 🛠️【被り対策アップデート】マルチX軸のパラメータ定義
+            # 🛠️【完全エラー＆文字被り対策】マルチX軸の定義
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
                 
-                # standoffを指定して軸のタイトルと数字の間隔を広げる
                 x_dict = {
-                    "title": dict(text=name, font=dict(color="black"), standoff=20),
+                    "title": dict(text=name, font=dict(color="black"), standoff=15),
                     "range": actual_x_range,
                     "tickfont": dict(color="black"),
                     "tickformat": ".0f",
@@ -244,24 +243,17 @@ if not df.empty:
                 if i == 0:
                     x_dict["side"] = "bottom"
                 else:
-                    # 2つ目以降の軸を振り分け
-                    side_position = "bottom" if i % 2 == 0 else "top"
+                    # 奇数番目はtop（上）、偶数番目はbottom（下）に交互配置
+                    side_position = "top" if i % 2 != 0 else "bottom"
                     x_dict.update({
                         "overlaying": "x",
-                        "anchor": "free",
                         "side": side_position,
                     })
                     
-                    # 3つ目以降など、同じ側に複数の軸が並ぶ場合に外側にずらして重なりを防ぐ設定
-                    # PlotlyはX軸に対してFreeアンカーのとき y軸のdomain（0〜1）を基準にpositionを指定できます。
-                    # bottom側の追加軸は0より小さく（下へ）、top側の追加軸は1より大きく（上へ）ずらします。
+                    # 🛠️ positionを使わず、shift（ピクセル単位移動）を使うことでValueErrorを完全に回避！
+                    # 軸が3つ以上あって上や下に重なりそうな時だけ、外側に50ピクセルずつ押し出します
                     if i >= 2:
-                        if side_position == "bottom":
-                            # 例: 3番目の軸(i=2) -> bottom側、少し下(-0.15)にずらす
-                            x_dict["position"] = 0.0 - (0.12 * (i // 2))
-                        else:
-                            # 例: 2番目の軸(i=1) -> top側、初期位置(1.0)。4番目の軸(i=3) -> top側、少し上(1.12)にずらす
-                            x_dict["position"] = 1.0 + (0.12 * ((i - 1) // 2))
+                        x_dict["shift"] = 50 * (i // 2)
 
                 init_layout_args[x_key] = go.layout.XAxis(**x_dict)
 
