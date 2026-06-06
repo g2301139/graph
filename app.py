@@ -248,7 +248,7 @@ if st.session_state.datasets:
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 改良された軸ロジック ---
+            # --- 軸の配置ロジック（左側追加への修正） ---
             if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 xaxis_id = "x"
                 if loop_count == 0:
@@ -261,39 +261,40 @@ if st.session_state.datasets:
                 else:
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
+                    # 左側にずらしていくため、マイナスのオフセット値を設定
                     pos_offset = 0.0 - (extra_y_count * 0.08)
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="left", # 追加されるY軸を左側に並べる
+                        side="left", # ご要望通り、追加されるY軸を「左側」へ変更
                         anchor="free",
                         position=pos_offset
                     )
             
             elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
-                # 【修正】Y軸のみを合わせる（縦に重ねる）＝ Y軸という項目（名前）は同じ左側だが、
-                # スケールが違う場合は「別の独立した目盛り」として右側に増やしていくことで潰れを防止
-                xaxis_id = "x"
+                yaxis_id = "y"
                 if loop_count == 0:
                     update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
-                    update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 
                 if loop_count == 0 or integrate_scales:
-                    yaxis_id = "y"
+                    xaxis_id = "x"
+                    if loop_count == 0:
+                        update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 else:
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
-                    # 目盛りを統合しない場合は、2つ目以降のデータ専用Y軸を「右側」に配置して、値の潰れを防ぐ
-                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
+                    # Y軸のみ合わせる場合も、統合しない時は左側にY軸を追加
+                    pos_offset = 0.0 - (extra_y_count * 0.08)
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="right", # 右側に個別の目盛りを生成
+                        side="left", # 「左側」に増やす
                         anchor="free",
                         position=pos_offset
                     )
+                    xaxis_id = "x" 
                     
             else: # 「❌ どちらも合わせない」の場合
                 if loop_count == 0:
@@ -307,6 +308,7 @@ if st.session_state.datasets:
                     xaxis_id = f"x{extra_x_count + 1}"
                     yaxis_id = f"y{extra_y_count + 1}"
                     
+                    # X軸は下側に増やす
                     x_pos_offset = 0.0 - (extra_x_count * 0.08)
                     update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
                         title=dict(text=x_axis_name),
@@ -316,12 +318,13 @@ if st.session_state.datasets:
                         anchor="free",
                         position=x_pos_offset
                     )
+                    # Y軸は左側に増やす
                     y_pos_offset = 0.0 - (extra_y_count * 0.08)
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="left", 
+                        side="left", # 「左側」に増やす
                         anchor="free",
                         position=y_pos_offset
                     )
@@ -361,17 +364,14 @@ if st.session_state.datasets:
             if match_mode in ["X軸（横軸）のみを合わせて、Y軸を追加していく", "Y軸（縦軸）のみを合わせて、X軸を追加していく"]:
                 update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
 
-        # 動的マージン調整（左と右の両方の増加に対応）
-        # 「X軸のみ合わせる」「どちらも合わせない」は左が増える
-        # 「Y軸のみ合わせる」は右が増える
-        left_margin = 80 + (extra_y_count * 75) if match_mode != "Y軸（縦軸）のみを合わせて、X軸を追加していく" else 80
-        right_margin = 80 + (extra_y_count * 75) if match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく" else 50
-        update_layout_args["margin"] = dict(l=left_margin, r=right_margin)
+        # 【超重要】左側に軸が増えるため、グラフの「左側の余白（l）」を動的に広げる設定
+        left_margin = 80 + (extra_y_count * 75)
+        update_layout_args["margin"] = dict(l=left_margin, r=50)
 
         # レイアウト適用
         merged_fig.update_layout(**update_layout_args)
         
-        # 高さの自動拡張
+        # 下側にX軸が増える場合の高さ自動拡張
         fig_height = 500 + (extra_x_count * 45)
 
         st.subheader("📉 合体したグラフ")
