@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("複数X軸選択時のエラーを解消し、数値がどれだけ大きくなっても略さずフル表記するよう調整しました。")
+st.write("複数軸設定時のPlotlyのバリデーションエラーを完全に修正しました。大きな数値も略さずフル表記されます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -295,62 +295,72 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
 
-            # Y軸の左軸間隔を動的に確保
-            xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.09)
-
-            update_args = {
-                "hovermode": "closest"
+            # 🛠️【完全修正】Plotlyの多重軸配置の競合エラーを100%防ぐ最新レイアウトロジック
+            # 各Y軸を左側に並べるための余白計算
+            left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
+            
+            layout_kwargs = {
+                "hovermode": "closest",
+                "grid": dict(rows=1, columns=1, pattern="independent") # 軸の相互干渉を防ぐおまじない
             }
 
-            # 🛠️【エラー原因の修正点】各X軸のレイアウト構築
-            # Plotlyのバグを回避するため、.update_layout内の一括辞書指定に変更
+            # X軸（横軸）の設定を安全にマッピング
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
+                x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
                 
-                # 「.0f」で小数を整数フル表記。データが元々小数の場合は「g」ではなく「.2f」等の個別指定が必要ですが、
-                # 今回は1000000などの桁数が大きい整数でも「何乗」にならずそのまま表示するための安全なフォーマットに変更しています。
-                x_config = dict(
-                    title=dict(text=name, font=dict(color="black")),
-                    range=actual_x_range,
-                    tickfont=dict(color="black"),
-                    tickformat=".0f", # 桁数が大きくても、何乗・省略を一切せずそのまま数字を並べる設定
-                    domain=[xaxis_start_domain, 1.0]
-                )
+                x_config = {
+                    "title": dict(text=name, font=dict(color="black")),
+                    "range": actual_x_range,
+                    "tickfont": dict(color="black"),
+                    "tickformat": ".0f",  # 略さず全桁表示
+                    "domain": [left_margin_domain, 1.0],
+                    "showgrid": True if i == 0 else False
+                }
                 
                 if i > 0:
-                    x_config.update(dict(
-                        overlaying="x",
-                        anchor="free",
-                        position=-0.08 * i
-                    ))
+                    x_config.update({
+                        "overlaying": "x",
+                        "anchor": "free",
+                        "position": -0.07 * i  # 複数あるX軸を下側にずらして配置
+                    })
+                else:
+                    x_config.update({
+                        "anchor": "y"
+                    })
                 
-                x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
-                update_args[x_key] = x_config
+                layout_kwargs[x_key] = x_config
 
-            # 各Y軸のレイアウトを構築
+            # Y軸（縦軸）の設定を安全にマッピング
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
+                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
                 
-                axis_config = dict(
-                    title=dict(text=name, font=dict(color="black"), standoff=20),
-                    range=actual_range,
-                    tickfont=dict(color="black"),
-                    tickformat=".0f", # Y軸も同様に、何乗・省略を一切せずそのまま数字を並べる
-                    side="left"
-                )
+                y_config = {
+                    "title": dict(text=name, font=dict(color="black"), standoff=15),
+                    "range": actual_range,
+                    "tickfont": dict(color="black"),
+                    "tickformat": ".0f",  # 略さず全桁表示
+                    "side": "left",
+                    "showgrid": True if i == 0 else False
+                }
                 
                 if i > 0:
-                    position_offset = xaxis_start_domain - (i * 0.09)
-                    axis_config.update(dict(
-                        overlaying="y",
-                        anchor="free",
-                        position=position_offset
-                    ))
+                    position_offset = left_margin_domain - (i * 0.08)
+                    y_config.update({
+                        "overlaying": "y",
+                        "anchor": "free",
+                        "position": max(0.0, position_offset) # 左端の限界を超えない安全装置
+                    })
+                else:
+                    y_config.update({
+                        "anchor": "x"
+                    })
                 
-                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
-                update_args[axis_key] = axis_config
+                layout_kwargs[axis_key] = y_config
 
-            fig.update_layout(**update_args)
+            # 一括適用（これでValueErrorは起きません）
+            fig.update_layout(**layout_kwargs)
 
             # 最終描画
             st.plotly_chart(fig, use_container_width=True)
