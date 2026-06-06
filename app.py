@@ -84,13 +84,6 @@ def get_trendline_data(dataframe, x_col, y_col):
         return np.array([min(x_vals), max(x_vals)]), a * np.array([min(x_vals), max(x_vals)]) + b
     except: return None, None
 
-def determine_shape(dataframe, x, y):
-    try:
-        x_val, y_val = pd.to_numeric(dataframe[x]).values, pd.to_numeric(dataframe[y]).values
-        if len(x_val) < 3: return "linear"
-        return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
-    except: return "linear"
-
 # -----------------------------------------------------------------------------
 # 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
@@ -141,45 +134,47 @@ if st.session_state.datasets:
                     st.markdown(f"**■ 項目: {y_col}**")
                     style_col, name_col = st.columns(2)
                     with style_col:
+                        # ご要望に基づき選択肢を刷新（デフォルトを「点と曲線」に設定しています）
                         line_style = st.selectbox(
                             f"「{y_col}」の表示スタイル", 
-                            options=["点（マーカー）のみ", "線のみ（曲線）", "点と線（両方）", "トレンド線（直線）"], 
-                            index=2, 
+                            options=["点（マーカー）のみ", "直線（線のみ）", "曲線（滑らかな線のみ）", "点と直線", "点と曲線", "トレンド線（直線）"], 
+                            index=4, 
                             key=f"style_{idx}_{y_col}"
                         )
                         line_styles_config[y_col] = line_style
                     
                     with name_col:
-                        # 点と線、それぞれの名前を格納する辞書を初期化
                         legend_names_config[y_col] = {}
                         
                         # カテゴリー色分けがある場合
                         if color_axis != "なし":
                             for cat in df[color_axis].unique():
                                 base_name = f"{dataset['name']} ({cat})"
-                                if line_style == "点と線（両方）":
+                                if line_style in ["点と直線", "点と曲線"]:
+                                    suffix = "直線" if line_style == "点と直線" else "曲線"
                                     legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name} (点)", key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
-                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（線）: {y_col} [{cat}]", value=f"{base_name} (線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（{suffix}）: {y_col} [{cat}]", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
                                 elif line_style == "トレンド線（直線）":
                                     legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name}", key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
                                     legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（トレンド線）: {y_col} [{cat}]", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
                                 elif line_style == "点（マーカー）のみ":
                                     legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=base_name, key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
-                                elif line_style == "線のみ（曲線）":
+                                else: # 直線、曲線
                                     legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（線）: {y_col} [{cat}]", value=base_name, key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
                         
                         # 通常（色分けなし）の場合
                         else:
                             base_name = f"{dataset['name']}"
-                            if line_style == "点と線（両方）":
+                            if line_style in ["点と直線", "点と曲線"]:
+                                suffix = "直線" if line_style == "点と直線" else "曲線"
                                 legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name} (点)", key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
-                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（線）", value=f"{base_name} (線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
+                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（{suffix}）", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
                             elif line_style == "トレンド線（直線）":
                                 legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name}", key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
                                 legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（トレンド線）", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
                             elif line_style == "点（マーカー）のみ":
                                 legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=base_name, key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
-                            elif line_style == "線のみ（曲線）":
+                            else: # 直線、曲線
                                 legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（線）", value=base_name, key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
 
             configs[idx] = {
@@ -200,6 +195,9 @@ if st.session_state.datasets:
                 for y_axis in y_axes:
                     selected_style = line_styles_config.get(y_axis)
                     names = legend_names_config.get(y_axis, {})
+                    
+                    # 線の滑らかさの設定
+                    shape_mode = "spline" if "曲線" in selected_style else "linear"
                         
                     if color_axis != "なし":
                         for cat in df[color_axis].unique():
@@ -209,11 +207,11 @@ if st.session_state.datasets:
                             
                             if selected_style == "点（マーカー）のみ":
                                 fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}")))
-                            elif selected_style == "線のみ（曲線）":
-                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=names.get(f"line_{cat}")))
-                            elif selected_style == "点と線（両方）":
+                            elif selected_style in ["直線（線のみ）", "曲線（滑らかな線のみ）"]:
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get(f"line_{cat}")))
+                            elif selected_style in ["点と直線", "点と曲線"]:
                                 fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}")))
-                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=names.get(f"line_{cat}")))
+                                fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get(f"line_{cat}")))
                             elif selected_style == "トレンド線（直線）":
                                 fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}")))
                                 x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
@@ -224,11 +222,11 @@ if st.session_state.datasets:
                         
                         if selected_style == "点（マーカー）のみ":
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker")))
-                        elif selected_style == "線のみ（曲線）":
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=names.get("line")))
-                        elif selected_style == "点と線（両方）":
+                        elif selected_style in ["直線（線のみ）", "曲線（滑らかな線のみ）"]:
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get("line")))
+                        elif selected_style in ["点と直線", "点と曲線"]:
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker")))
-                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=names.get("line")))
+                            fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get("line")))
                         elif selected_style == "トレンド線（直線）":
                             fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker")))
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
@@ -335,6 +333,8 @@ if st.session_state.datasets:
                 trace_xaxis = "x" if xaxis_id == "x" else xaxis_id
                 trace_yaxis = "y" if yaxis_id == "y" else yaxis_id
                 
+                shape_mode = "spline" if "曲線" in selected_style else "linear"
+                
                 if color_axis != "なし":
                     for cat in df[color_axis].unique():
                         sub_df = df[df[color_axis] == cat]
@@ -343,11 +343,11 @@ if st.session_state.datasets:
 
                         if selected_style == "点（マーカー）のみ":
                             merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                        elif selected_style == "線のみ（曲線）":
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=names.get(f"line_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                        elif selected_style == "点と線（両方）":
+                        elif selected_style in ["直線（線のみ）", "曲線（滑らかな線のみ）"]:
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get(f"line_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
+                        elif selected_style in ["点と直線", "点と曲線"]:
                             merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=determine_shape(sub_df, x_axis, y_axis), color=color), name=names.get(f"line_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
+                            merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get(f"line_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
                         elif selected_style == "トレンド線（直線）":
                             merged_fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get(f"marker_{cat}"), xaxis=trace_xaxis, yaxis=trace_yaxis))
                             x_t, y_t = get_trendline_data(sub_df, x_axis, y_axis)
@@ -358,11 +358,11 @@ if st.session_state.datasets:
 
                     if selected_style == "点（マーカー）のみ":
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                    elif selected_style == "線のみ（曲線）":
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=names.get("line"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                    elif selected_style == "点と線（両方）":
+                    elif selected_style in ["直線（線のみ）", "曲線（滑らかな線のみ）"]:
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get("line"), xaxis=trace_xaxis, yaxis=trace_yaxis))
+                    elif selected_style in ["点と直線", "点と曲線"]:
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker"), xaxis=trace_xaxis, yaxis=trace_yaxis))
-                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), name=names.get("line"), xaxis=trace_xaxis, yaxis=trace_yaxis))
+                        merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_mode, color=color), name=names.get("line"), xaxis=trace_xaxis, yaxis=trace_yaxis))
                     elif selected_style == "トレンド線（直線）":
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=color), name=names.get("marker"), xaxis=trace_xaxis, yaxis=trace_yaxis))
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
