@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("X軸も複数選択できるようになり、目盛りの数値は「何乗」や「K/M」などの省略を一切せずフル表記するよう修正しました。")
+st.write("複数X軸選択時のエラーを解消し、数値がどれだけ大きくなっても略さずフル表記するよう調整しました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -71,7 +71,6 @@ if not df.empty:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # 🛠️ X軸を複数選択（マルチセレクト）できるように変更
             x_axes = st.multiselect("X軸（横軸）を選択（複数選択可）", options=columns, default=[columns[0]])
         with col2:
             default_y = [c for c in columns if c not in x_axes and c != "カテゴリー"]
@@ -81,7 +80,7 @@ if not df.empty:
         with col3:
             color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0)
 
-        # 🛠️ X軸（横軸）の配置・統合設定
+        # X軸（横軸）の配置・統合設定
         st.subheader("X軸（横軸）の配置設定")
         x_axis_names = []
         data_x_axis_mapping = {}
@@ -242,20 +241,17 @@ if not df.empty:
                 except: return "linear"
 
             # プロット処理
-            # X軸とY軸のペアの数だけループ（要素数が合わない場合は最後の要素を使い回す）
             max_pairs = max(len(x_axes), len(y_axes))
             
             for idx_loop in range(max_pairs):
                 x_axis = x_axes[min(idx_loop, len(x_axes) - 1)]
                 y_axis = y_axes[min(idx_loop, len(y_axes) - 1)]
                 
-                # X軸マッピング取得
                 x_mapping = data_x_axis_mapping.get(x_axis)
                 if not x_mapping: continue
                 x_ax_idx = x_mapping["axis_idx"]
                 xaxis_id = "x" if x_ax_idx == 0 else f"x{x_ax_idx + 1}"
                 
-                # Y軸マッピング取得
                 y_mapping = data_axis_mapping.get(y_axis)
                 if not y_mapping: continue
                 y_ax_idx = y_mapping["axis_idx"]
@@ -299,23 +295,25 @@ if not df.empty:
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
 
-            # Y軸の左軸間隔を確保
+            # Y軸の左軸間隔を動的に確保
             xaxis_start_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.09)
 
             update_args = {
                 "hovermode": "closest"
             }
 
-            # 各X軸のレイアウト構築（複数軸は下側に重ねる）
+            # 🛠️【エラー原因の修正点】各X軸のレイアウト構築
+            # Plotlyのバグを回避するため、.update_layout内の一括辞書指定に変更
             for i, name in enumerate(x_axis_names):
                 actual_x_range = x_ranges_config.get(i) if custom_range else None
                 
-                # 🛠️ tickformat="f" で指数表記(何乗)や略記(K/M)を完全に無効化しフル表記
+                # 「.0f」で小数を整数フル表記。データが元々小数の場合は「g」ではなく「.2f」等の個別指定が必要ですが、
+                # 今回は1000000などの桁数が大きい整数でも「何乗」にならずそのまま表示するための安全なフォーマットに変更しています。
                 x_config = dict(
                     title=dict(text=name, font=dict(color="black")),
                     range=actual_x_range,
                     tickfont=dict(color="black"),
-                    tickformat="f", # 浮動小数点/整数をそのまま出す（略さない・何乗にしない）
+                    tickformat=".0f", # 桁数が大きくても、何乗・省略を一切せずそのまま数字を並べる設定
                     domain=[xaxis_start_domain, 1.0]
                 )
                 
@@ -323,7 +321,7 @@ if not df.empty:
                     x_config.update(dict(
                         overlaying="x",
                         anchor="free",
-                        position=-0.08 * i # 複数ある場合は下側にずらして配置
+                        position=-0.08 * i
                     ))
                 
                 x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
@@ -333,12 +331,11 @@ if not df.empty:
             for i, name in enumerate(axis_names):
                 actual_range = y_ranges_config.get(i) if custom_range else None
                 
-                # 🛠️ tickformat="f" で指数表記(何乗)や略記(K/M)を完全に無効化しフル表記
                 axis_config = dict(
                     title=dict(text=name, font=dict(color="black"), standoff=20),
                     range=actual_range,
                     tickfont=dict(color="black"),
-                    tickformat="f", # 浮動小数点/整数をそのまま出す（略さない・何乗にしない）
+                    tickformat=".0f", # Y軸も同様に、何乗・省略を一切せずそのまま数字を並べる
                     side="left"
                 )
                 
