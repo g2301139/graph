@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("データ確認用のテーブルの一番右側にも、列名（名前）を表示する列を追加しました。")
+st.write("右側の凡例名（データ点の説明）を自由にカスタマイズできるようになりました。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -56,18 +56,7 @@ if paste_input.strip():
 
 if not df.empty:
     st.subheader("現在のデータ確認")
-    
-    # 🛠️【今回の修正：一番右の列にも名前を入れるための処理】
-    # グラフの計算に影響を与えないよう、表示確認用の一時的なデータフレーム(display_df)を作ります
-    display_df = df.copy()
-    
-    # 各行の一番右側に、一番上のヘッダー（列名）をカンマ区切りなどで並べた「名前の列」を自動生成します
-    # ※スクロールした際にも、右端を見れば「ここはどのデータが入る列なのか」がひと目で分かります
-    header_names_string = " | ".join(df.columns.tolist())
-    display_df["（右端の名前確認用列）"] = header_names_string
-    
-    # 右端に名前を追加したテーブルを表示（元の df は汚さないのでグラフ計算は安全です）
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------------
 # 2. グラフの設定セクション
@@ -237,8 +226,10 @@ if not df.empty:
                         color_idx += 1
                         sub_df = df[df[color_axis] == cat]
                         
+                        # 🛠️ 入力されたカスタム凡例名を取得
                         custom_name = legend_names_config.get(f"{y_axis}_{cat}", f"{y_axis} ({cat})")
                         
+                        # データ点のプロット（右側の凡例名にカスタム名が適用されます）
                         fig.add_trace(go.Scatter(x=sub_df[x_axis], y=sub_df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=f"{y_axis}_{cat}"))
                         
                         if selected_style == "全体の平均を通る一直線（トレンド線）":
@@ -253,8 +244,10 @@ if not df.empty:
                     assigned_color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
                     
+                    # 🛠️ 入力されたカスタム凡例名を取得
                     custom_name = legend_names_config.get(y_axis, y_axis)
                     
+                    # データ点のプロット（右側の凡例名にカスタム名が適用されます）
                     fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="markers", marker=dict(size=10, color=assigned_color), name=custom_name, yaxis=yaxis_id, legendgroup=y_axis))
                     
                     if selected_style == "全体の平均を通る一直線（トレンド線）":
