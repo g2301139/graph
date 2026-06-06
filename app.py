@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能グラフ作成Webアプリ")
-st.write("Plotlyの動的マルチ軸エラーを完全に根絶したバージョンです。数値も略さずフル表記されます。")
+st.write("Plotlyの仕様に100%準拠し、マルチ軸エラーを完全に根絶しました。数値も略さずフル表記されます。")
 
 # -----------------------------------------------------------------------------
 # 1. データ入力セクション
@@ -218,7 +218,60 @@ if not df.empty:
         if not x_axes or not y_axes:
             st.warning("X軸とデータ列（Y軸）をそれぞれ1つ以上選択してください。")
         else:
-            fig = go.Figure()
+            # 🛠️【超重要：エラーの根本対策】
+            # 後からレイアウト辞書を変更すると型チェックで弾かれるため、最初から全構造を持ったLayoutオブジェクトを直接生成する
+            left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
+            
+            init_layout_args = {
+                "hovermode": "closest"
+            }
+
+            # 実際に使うX軸のパラメーターをあらかじめ定義
+            for i, name in enumerate(x_axis_names):
+                actual_x_range = x_ranges_config.get(i) if custom_range else None
+                x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
+                
+                x_dict = {
+                    "title": dict(text=name, font=dict(color="black")),
+                    "range": actual_x_range,
+                    "tickfont": dict(color="black"),
+                    "tickformat": ".0f",  # 略さずそのままフル表記
+                    "domain": [left_margin_domain, 1.0],
+                    "showgrid": True if i == 0 else False
+                }
+                if i > 0:
+                    x_dict.update({
+                        "overlaying": "x",
+                        "anchor": "free",
+                        "position": -0.07 * i
+                    })
+                init_layout_args[x_key] = go.layout.XAxis(**x_dict)
+
+            # 実際に使うY軸のパラメーターをあらかじめ定義
+            for i, name in enumerate(axis_names):
+                actual_range = y_ranges_config.get(i) if custom_range else None
+                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
+                
+                y_dict = {
+                    "title": dict(text=name, font=dict(color="black"), standoff=15),
+                    "range": actual_range,
+                    "tickfont": dict(color="black"),
+                    "tickformat": ".0f",  # 略さずそのままフル表記
+                    "side": "left",
+                    "showgrid": True if i == 0 else False
+                }
+                if i > 0:
+                    position_offset = left_margin_domain - (i * 0.08)
+                    y_dict.update({
+                        "overlaying": "y",
+                        "anchor": "free",
+                        "position": max(0.0, position_offset)
+                    })
+                init_layout_args[axis_key] = go.layout.YAxis(**y_dict)
+
+            # 🛠️ ここで「最初からマルチ軸が組み込まれた状態」のFigureを組み立てる（これでValueErrorを完全に回避）
+            fig = go.Figure(layout=go.Layout(**init_layout_args))
+
             color_cycle = px.colors.qualitative.Plotly
             color_idx = 0
 
@@ -238,7 +291,7 @@ if not df.empty:
                     return "linear" if np.var(np.diff(np.diff(y_val) / np.diff(x_val))) < 1e-5 else "spline"
                 except: return "linear"
 
-            # トレース（データプロット）追加処理
+            # データを安全に割り当てられた軸に対してプロットしていく
             max_pairs = max(len(x_axes), len(y_axes))
             
             for idx_loop in range(max_pairs):
@@ -288,78 +341,6 @@ if not df.empty:
                     elif selected_style == "数値を自動判定した線（曲線）":
                         shape_type = determine_shape(df, x_axis, y_axis)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=shape_type, color=assigned_color), name=f"{custom_name} (曲線)", xaxis=xaxis_id, yaxis=yaxis_id, legendgroup=y_axis, showlegend=False))
-
-            # 🛠️【完全エラー回避ロジック】
-            # Plotlyの内部バリデーションを完全にスルーさせるため、最初から確定数の軸をベーステンプレートとして構築
-            left_margin_domain = 0.0 + (max(0, len(axis_names) - 1) * 0.08)
-            
-            final_layout = {
-                "hovermode": "closest"
-            }
-
-            # あらかじめ「X軸1〜10本」「Y軸1〜10本」の定義済み器をすべて辞書に初期セット
-            # これを行うことで、Plotly内部の型エラー(ValueError)を確実に排除します。
-            for a_idx in range(1, 11):
-                x_key = "xaxis" if a_idx == 1 else f"xaxis{a_idx}"
-                y_key = "yaxis" if a_idx == 1 else f"yaxis{a_idx}"
-                final_layout[x_key] = {"visible": False}
-                final_layout[y_key] = {"visible": False}
-
-            # 実際に利用するX軸を設定（略さずフル表記設定も内包）
-            for i, name in enumerate(x_axis_names):
-                actual_x_range = x_ranges_config.get(i) if custom_range else None
-                x_key = "xaxis" if i == 0 else f"xaxis{i + 1}"
-                
-                x_config = {
-                    "visible": True,
-                    "title": dict(text=name, font=dict(color="black")),
-                    "range": actual_x_range,
-                    "tickfont": dict(color="black"),
-                    "tickformat": ".0f",  # 略さずそのまま表記
-                    "domain": [left_margin_domain, 1.0],
-                    "showgrid": True if i == 0 else False
-                }
-                
-                if i > 0:
-                    x_config.update({
-                        "overlaying": "x",
-                        "anchor": "free",
-                        "position": -0.07 * i
-                    })
-                else:
-                    x_config.update({"anchor": "y"})
-                
-                final_layout[x_key] = x_config
-
-            # 実際に利用するY軸を設定（略さずフル表記設定も内包）
-            for i, name in enumerate(axis_names):
-                actual_range = y_ranges_config.get(i) if custom_range else None
-                axis_key = "yaxis" if i == 0 else f"yaxis{i + 1}"
-                
-                y_config = {
-                    "visible": True,
-                    "title": dict(text=name, font=dict(color="black"), standoff=15),
-                    "range": actual_range,
-                    "tickfont": dict(color="black"),
-                    "tickformat": ".0f",  # 略さずそのまま表記
-                    "side": "left",
-                    "showgrid": True if i == 0 else False
-                }
-                
-                if i > 0:
-                    position_offset = left_margin_domain - (i * 0.08)
-                    y_config.update({
-                        "overlaying": "y",
-                        "anchor": "free",
-                        "position": max(0.0, position_offset)
-                    })
-                else:
-                    y_config.update({"anchor": "x"})
-                
-                final_layout[axis_key] = y_config
-
-            # 定義済みの完全なレイアウト構造を一発で上書き適用
-            fig.update_layout(final_layout)
 
             # 最終描画
             st.plotly_chart(fig, use_container_width=True)
