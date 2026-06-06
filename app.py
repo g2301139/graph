@@ -116,14 +116,22 @@ if st.session_state.datasets:
                 
             col1, col2, col3 = st.columns(3)
             with col1:
-                x_axis = st.selectbox("X軸（横軸）を選択", options=columns, index=0, key=f"x_{idx}")
+                x_axis = st.selectbox("X軸（横軸）データ列を選択", options=columns, index=0, key=f"x_{idx}")
             with col2:
-                # 2列目以降を自動ですべて初期チェック状態にする
                 default_y = [c for c in columns[1:] if c != "カテゴリー"]
                 if not default_y: default_y = [columns[0]]
-                y_axes = st.multiselect("グラフに描画するデータ列を選択", options=columns, default=default_y, key=f"y_{idx}")
+                y_axes = st.multiselect("グラフに描画するY軸データ列を選択", options=columns, default=default_y, key=f"y_{idx}")
             with col3:
                 color_axis = st.selectbox("色分けする列（オプション）", options=["なし"] + columns, index=0, key=f"color_{idx}")
+
+            # 【新規追加】軸の名前変更用テキストボックス
+            st.markdown("✏️ **軸の名前（ラベル）を編集**")
+            label_col1, label_col2 = st.columns(2)
+            with label_col1:
+                custom_x_label = st.text_input("横軸（X軸）の表示名", value=x_axis, key=f"label_x_{idx}_{dataset['name']}")
+            with label_col2:
+                default_y_label = ", ".join(y_axes) if y_axes else "値"
+                custom_y_label = st.text_input("縦軸（Y軸）の表示名", value=default_y_label, key=f"label_y_{idx}_{dataset['name']}")
 
             # 線の引き方・凡例名の個別設定
             line_styles_config = {}
@@ -141,7 +149,6 @@ if st.session_state.datasets:
                         )
                         line_styles_config[y_col] = line_style
                     with name_col:
-                        # 連動バグ回避のため、key名にdataset['name']を含めることで完全追従させます
                         if color_axis != "なし":
                             for cat in df[color_axis].unique():
                                 def_name = f"{dataset['name']} ({cat})"
@@ -157,7 +164,9 @@ if st.session_state.datasets:
                 "y_axes": y_axes,
                 "color_axis": color_axis,
                 "line_styles": line_styles_config,
-                "legend_names": legend_names_config
+                "legend_names": legend_names_config,
+                "custom_x_label": custom_x_label,
+                "custom_y_label": custom_y_label
             }
 
             # 個別グラフの描画
@@ -202,8 +211,8 @@ if st.session_state.datasets:
                 
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
-                    xaxis=dict(title=x_axis, tickformat="d"), 
-                    yaxis=dict(title="値", tickformat="d"), 
+                    xaxis=dict(title=custom_x_label, tickformat="d"), 
+                    yaxis=dict(title=custom_y_label, tickformat="d"), 
                     hovermode="closest"
                 )
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
@@ -226,26 +235,33 @@ if st.session_state.datasets:
     if len(selected_indices) < 1:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
-        st.subheader("② 目盛り（スケール）と縦軸名の設定")
+        st.subheader("② 目盛り（スケール）と軸名（ラベル）の設定")
         integrate_scales = st.checkbox("データごとに異なるY軸にせず、すべてのデータでY軸の目盛りを1つに統合する", value=False)
 
-        st.markdown("✏️ **縦軸（Y軸）のラベル名編集**")
-        custom_axis_titles = {}
+        # 【新規追加】合体グラフ用のX軸名とY軸名の編集フォーム
+        st.markdown("✏️ **合体グラフの軸ラベル名編集**")
         
+        # 1つ目の選択データの情報を基準にデフォルトX軸名を生成
+        first_cfg = configs.get(selected_indices[0]) if selected_indices else None
+        default_merged_x_label = first_cfg["custom_x_label"] if first_cfg else "共通横軸 (X)"
+        
+        merged_x_title = st.text_input("合体グラフの横軸（X軸）名", value=default_merged_x_label, key="merged_label_x")
+
+        custom_axis_titles = {}
         axis_label_idx = 0
         for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
             
-            default_title = f"{dataset['name']}"
+            default_title = cfg["custom_y_label"]
             
             if loop_count == 0:
-                label_text = "ベースとなる左側の縦軸名（第1 Y軸）"
+                label_text = f"ベースとなる左側の縦軸名（第1 Y軸: {dataset['name']} 用）"
                 custom_axis_titles["y"] = st.text_input(label_text, value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{dataset['name']}")
             elif not integrate_scales:
                 axis_label_idx += 1
-                label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸）"
+                label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸: {dataset['name']} 用）"
                 custom_axis_titles[f"y_axis_{idx}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{idx}_{dataset['name']}")
 
         merged_fig = go.Figure()
@@ -261,7 +277,6 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            x_axis_name = cfg["x_axis"] 
             x_axis = cfg["x_axis"]
             color_axis = cfg["color_axis"]
             line_styles = cfg["line_styles"]
@@ -270,7 +285,7 @@ if st.session_state.datasets:
             # --- 軸の配置ロジック ---
             xaxis_id = "x"
             if loop_count == 0:
-                update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
+                update_layout_args["xaxis"] = dict(title=merged_x_title, tickformat="d", side="bottom")
             
             if loop_count == 0 or integrate_scales:
                 yaxis_id = "y"
