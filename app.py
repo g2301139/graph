@@ -248,7 +248,7 @@ if st.session_state.datasets:
             line_styles = cfg["line_styles"]
             legend_names = cfg["legend_names"]
 
-            # --- 軸の配置ロジック（左側追加への修正） ---
+            # --- 修正された軸割り当てロジック ---
             if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
                 xaxis_id = "x"
                 if loop_count == 0:
@@ -261,13 +261,12 @@ if st.session_state.datasets:
                 else:
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
-                    # 左側にずらしていくため、マイナスのオフセット値を設定
-                    pos_offset = 0.0 - (extra_y_count * 0.08)
+                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="left", # ご要望通り、追加されるY軸を「左側」へ変更
+                        side="right", # ご要望通り、追加されるY軸は右側へ
                         anchor="free",
                         position=pos_offset
                     )
@@ -275,6 +274,7 @@ if st.session_state.datasets:
             elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
                 yaxis_id = "y"
                 if loop_count == 0:
+                    # 最初の基本Y軸は「左側」
                     update_layout_args["yaxis"] = dict(title=y_axis_name, tickformat="d", side="left")
                 
                 if loop_count == 0 or integrate_scales:
@@ -282,19 +282,19 @@ if st.session_state.datasets:
                     if loop_count == 0:
                         update_layout_args["xaxis"] = dict(title=x_axis_name, tickformat="d", side="bottom")
                 else:
+                    # Y軸は合っている（同じ）だけど目盛を統合しない場合、Y軸を右側に増やす
                     extra_y_count += 1
                     yaxis_id = f"y{extra_y_count + 1}"
-                    # Y軸のみ合わせる場合も、統合しない時は左側にY軸を追加
-                    pos_offset = 0.0 - (extra_y_count * 0.08)
+                    pos_offset = 1.0 + (extra_y_count - 1) * 0.08
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="left", # 「左側」に増やす
+                        side="right", # 軸の名前と目盛は右側に増える
                         anchor="free",
                         position=pos_offset
                     )
-                    xaxis_id = "x" 
+                    xaxis_id = "x" # X軸は共通
                     
             else: # 「❌ どちらも合わせない」の場合
                 if loop_count == 0:
@@ -308,7 +308,7 @@ if st.session_state.datasets:
                     xaxis_id = f"x{extra_x_count + 1}"
                     yaxis_id = f"y{extra_y_count + 1}"
                     
-                    # X軸は下側に増やす
+                    # X軸は下側に下層として増やす
                     x_pos_offset = 0.0 - (extra_x_count * 0.08)
                     update_layout_args[f"xaxis{extra_x_count + 1}"] = dict(
                         title=dict(text=x_axis_name),
@@ -318,13 +318,13 @@ if st.session_state.datasets:
                         anchor="free",
                         position=x_pos_offset
                     )
-                    # Y軸は左側に増やす
-                    y_pos_offset = 0.0 - (extra_y_count * 0.08)
+                    # Y軸は右側にどんどん並ぶように増やす
+                    y_pos_offset = 1.0 + (extra_y_count - 1) * 0.08
                     update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                         title=dict(text=y_axis_name),
                         tickformat="d",
                         overlaying="y",
-                        side="left", # 「左側」に増やす
+                        side="right", # 右側に増やす
                         anchor="free",
                         position=y_pos_offset
                     )
@@ -332,6 +332,8 @@ if st.session_state.datasets:
             # データのプロット
             for y_axis in cfg["y_axes"]:
                 selected_style = line_styles.get(y_axis)
+                
+                # Plotlyに新しい軸を認識させるためのキーワード設定形式に補正
                 trace_xaxis = "x" if xaxis_id == "x" else xaxis_id
                 trace_yaxis = "y" if yaxis_id == "y" else yaxis_id
                 
@@ -361,17 +363,19 @@ if st.session_state.datasets:
                         merged_fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines", line=dict(shape=determine_shape(df, x_axis, y_axis), color=color), xaxis=trace_xaxis, yaxis=trace_yaxis, legendgroup=f"m_{idx}_{y_axis}", showlegend=False))
 
         if integrate_scales:
-            if match_mode in ["X軸（横軸）のみを合わせて、Y軸を追加していく", "Y軸（縦軸）のみを合わせて、X軸を追加していく"]:
+            if match_mode == "X軸（横軸）のみを合わせて、Y軸を追加していく":
+                update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
+            elif match_mode == "Y軸（縦軸）のみを合わせて、X軸を追加していく":
                 update_layout_args["yaxis"] = dict(title="共通縦軸 (Y)", tickformat="d", side="left")
 
-        # 【超重要】左側に軸が増えるため、グラフの「左側の余白（l）」を動的に広げる設定
-        left_margin = 80 + (extra_y_count * 75)
-        update_layout_args["margin"] = dict(l=left_margin, r=50)
+        # レイアウト全体の右側余白を、軸が増えた分だけ自動拡張して文字切れを防ぐ
+        right_margin = 80 + (extra_y_count * 60)
+        update_layout_args["margin"] = dict(r=right_margin)
 
-        # レイアウト適用
+        # 軸が増えても崩れないよう最終適用
         merged_fig.update_layout(**update_layout_args)
         
-        # 下側にX軸が増える場合の高さ自動拡張
+        # 下側にX軸が増える場合のみ、高さを自動拡張
         fig_height = 500 + (extra_x_count * 45)
 
         st.subheader("📉 合体したグラフ")
