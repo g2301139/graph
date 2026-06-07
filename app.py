@@ -26,11 +26,11 @@ st.header("1. データの入力と管理")
 
 default_paste_data = (
     "X軸データ\t売上\t利益\t目標値\tカテゴリー\n"
-    "1\t10000000\t2\t8\tA\n"
-    "1.5\t12000000\t5\t10\tB\n"
-    "2\t18000000\t4\t15\tA\n"
-    "2.5\t20000000\t8\t18\tB\n"
-    "3\t26000000\t7\t22\tA"
+    "1000000\t10000000\t2\t8\tA\n"
+    "2000000\t12000000\t5\t10\tB\n"
+    "3000000\t18000000\t4\t15\tA\n"
+    "4000000\t20000000\t8\t18\tB\n"
+    "5000000\t26000000\t7\t22\tA"
 )
 
 with st.form("add_data_form", clear_on_submit=True):
@@ -268,11 +268,11 @@ if st.session_state.datasets:
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                             if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=names.get("line")))
                 
-                # tickformat="d" を削除し、0.5刻みなどの小数を正しく出せるように
+                # tickformat="f" で数値をそのまま全桁表示に強制
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
-                    xaxis=dict(title=custom_x_label), 
-                    yaxis=dict(title=custom_y_label), 
+                    xaxis=dict(title=custom_x_label, tickformat="f"), 
+                    yaxis=dict(title=custom_y_label, tickformat="f"), 
                     hovermode="closest"
                 )
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
@@ -297,20 +297,18 @@ if st.session_state.datasets:
     else:
         st.subheader("② 目盛り（スケール）と軸名（ラベル）の設定")
         
-        # 軸設定エリアを分かりやすく分割
         setting_col1, setting_col2 = st.columns(2)
         with setting_col1:
             integrate_scales = st.checkbox("ｙ軸を固定して合体する", value=False)
             
         with setting_col2:
-            # 横軸の最大値・最小値の編集スイッチ
             custom_x_range_enabled = st.checkbox("横軸（X軸）の表示範囲を手動で設定する", value=False)
             if custom_x_range_enabled:
                 range_col1, range_col2 = st.columns(2)
                 with range_col1:
-                    x_min_val = st.number_input("横軸の最小値 (Min)", value=0.0, step=0.1, key="x_range_min")
+                    x_min_val = st.number_input("横軸の最小値 (Min)", value=0.0, step=1.0, key="x_range_min")
                 with range_col2:
-                    x_max_val = st.number_input("横軸の最大値 (Max)", value=5.0, step=0.1, key="x_range_max")
+                    x_max_val = st.number_input("横軸の最大値 (Max)", value=5000000.0, step=1.0, key="x_range_max")
 
         st.markdown("✏️ **合体グラフの軸ラベル名編集**")
         
@@ -356,8 +354,8 @@ if st.session_state.datasets:
             # --- 軸の配置ロジック ---
             xaxis_id = "x"
             if loop_count == 0:
-                # tickformat を外し、範囲設定があれば適用する
-                xaxis_dict = dict(title=merged_x_title, side="bottom")
+                # tickformat="f" を適用し、数値をそのまま表示
+                xaxis_dict = dict(title=merged_x_title, side="bottom", tickformat="f")
                 if custom_x_range_enabled:
                     xaxis_dict["range"] = [x_min_val, x_max_val]
                 update_layout_args["xaxis"] = xaxis_dict
@@ -365,7 +363,7 @@ if st.session_state.datasets:
             if loop_count == 0 or integrate_scales:
                 yaxis_id = "y"
                 if loop_count == 0:
-                    update_layout_args["yaxis"] = dict(title=custom_axis_titles.get("y", "縦軸"), side="left")
+                    update_layout_args["yaxis"] = dict(title=custom_axis_titles.get("y", "縦軸"), side="left", tickformat="f")
             else:
                 extra_y_count += 1
                 yaxis_id = f"y{extra_y_count + 1}"
@@ -376,7 +374,8 @@ if st.session_state.datasets:
                     overlaying="y",
                     side="right", 
                     anchor="free",
-                    position=pos_offset
+                    position=pos_offset,
+                    tickformat="f" # 追加された軸にも適用
                 )
 
             # データのプロット
