@@ -26,11 +26,11 @@ st.header("1. データの入力と管理")
 
 default_paste_data = (
     "X軸データ\t売上\t利益\t目標値\tカテゴリー\n"
-    "1000000\t10000000\t2\t8\tA\n"
-    "2000000\t12000000\t5\t10\tB\n"
-    "3000000\t18000000\t4\t15\tA\n"
-    "4000000\t20000000\t8\t18\tB\n"
-    "5000000\t26000000\t7\t22\tA"
+    "1\t10000000\t2\t8\tA\n"
+    "1.5\t12000000\t5\t10\tB\n"
+    "2\t18000000\t4\t15\tA\n"
+    "2.5\t20000000\t8\t18\tB\n"
+    "3\t26000000\t7\t22\tA"
 )
 
 with st.form("add_data_form", clear_on_submit=True):
@@ -91,10 +91,8 @@ if st.session_state.datasets:
             st.markdown("---")
             st.markdown(f"### ✏️ データの編集: 「{st.session_state.datasets[edit_idx]['name']}」")
             
-            # 名前の編集
             new_name = st.text_input("データセットの名前を変更", value=st.session_state.datasets[edit_idx]['name'], key="edit_name_input")
             
-            # 中身（データフレーム）の編集
             st.write("セルをダブルクリックすると数値を直接編集できます。行の追加や削除も可能です。")
             updated_df = st.data_editor(
                 st.session_state.datasets[edit_idx]['df'],
@@ -108,7 +106,7 @@ if st.session_state.datasets:
                 if st.button("💾 変更を保存する", type="primary", key="save_edit_btn"):
                     st.session_state.datasets[edit_idx]['name'] = new_name
                     st.session_state.datasets[edit_idx]['df'] = updated_df
-                    st.session_state.editing_idx = None # 編集終了
+                    st.session_state.editing_idx = None
                     st.success("データを更新しました！")
                     st.rerun()
             with save_col2:
@@ -189,7 +187,6 @@ if st.session_state.datasets:
                     with name_col:
                         legend_names_config[y_col] = {}
                         
-                        # カテゴリー色分けがある場合
                         if color_axis != "なし":
                             for cat in df[color_axis].unique():
                                 base_name = f"{dataset['name']} ({cat})"
@@ -202,10 +199,8 @@ if st.session_state.datasets:
                                     legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（トレンド線）: {y_col} [{cat}]", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{y_col}_{cat}")
                                 elif line_style == "点（マーカー）のみ":
                                     legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=base_name, key=f"legname_m_{idx}_{y_col}_{cat}")
-                                else: # 直線、曲線
+                                else:
                                     legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（線）: {y_col} [{cat}]", value=base_name, key=f"legname_l_{idx}_{y_col}_{cat}")
-                        
-                        # 通常（色分けなし）の場合
                         else:
                             base_name = f"{dataset['name']}"
                             if line_style in ["点と直線", "点と曲線"]:
@@ -217,7 +212,7 @@ if st.session_state.datasets:
                                 legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（トレンド線）", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{y_col}")
                             elif line_style == "点（マーカー）のみ":
                                 legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=base_name, key=f"legname_m_{idx}_{y_col}")
-                            else: # 直線、曲線
+                            else:
                                 legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（線）", value=base_name, key=f"legname_l_{idx}_{y_col}")
 
             configs[idx] = {
@@ -238,7 +233,6 @@ if st.session_state.datasets:
                 for y_axis in y_axes:
                     selected_style = line_styles_config.get(y_axis)
                     names = legend_names_config.get(y_axis, {})
-                    
                     shape_mode = "spline" if "曲線" in selected_style else "linear"
                         
                     if color_axis != "なし":
@@ -274,10 +268,11 @@ if st.session_state.datasets:
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                             if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=names.get("line")))
                 
+                # tickformat="d" を削除し、0.5刻みなどの小数を正しく出せるように
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
-                    xaxis=dict(title=custom_x_label, tickformat="d"), 
-                    yaxis=dict(title=custom_y_label, tickformat="d"), 
+                    xaxis=dict(title=custom_x_label), 
+                    yaxis=dict(title=custom_y_label), 
                     hovermode="closest"
                 )
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
@@ -301,13 +296,26 @@ if st.session_state.datasets:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
         st.subheader("② 目盛り（スケール）と軸名（ラベル）の設定")
-        integrate_scales = st.checkbox("ｙ軸を固定して合体する", value=False)
+        
+        # 軸設定エリアを分かりやすく分割
+        setting_col1, setting_col2 = st.columns(2)
+        with setting_col1:
+            integrate_scales = st.checkbox("ｙ軸を固定して合体する", value=False)
+            
+        with setting_col2:
+            # 横軸の最大値・最小値の編集スイッチ
+            custom_x_range_enabled = st.checkbox("横軸（X軸）の表示範囲を手動で設定する", value=False)
+            if custom_x_range_enabled:
+                range_col1, range_col2 = st.columns(2)
+                with range_col1:
+                    x_min_val = st.number_input("横軸の最小値 (Min)", value=0.0, step=0.1, key="x_range_min")
+                with range_col2:
+                    x_max_val = st.number_input("横軸の最大値 (Max)", value=5.0, step=0.1, key="x_range_max")
 
         st.markdown("✏️ **合体グラフの軸ラベル名編集**")
         
         first_cfg = configs.get(selected_indices[0]) if selected_indices else None
         default_merged_x_label = first_cfg["custom_x_label"] if first_cfg else "共通横軸 (X)"
-        
         merged_x_title = st.text_input("合体グラフの横軸（X軸）名", value=default_merged_x_label, key="merged_label_x")
 
         custom_axis_titles = {}
@@ -348,12 +356,16 @@ if st.session_state.datasets:
             # --- 軸の配置ロジック ---
             xaxis_id = "x"
             if loop_count == 0:
-                update_layout_args["xaxis"] = dict(title=merged_x_title, tickformat="d", side="bottom")
+                # tickformat を外し、範囲設定があれば適用する
+                xaxis_dict = dict(title=merged_x_title, side="bottom")
+                if custom_x_range_enabled:
+                    xaxis_dict["range"] = [x_min_val, x_max_val]
+                update_layout_args["xaxis"] = xaxis_dict
             
             if loop_count == 0 or integrate_scales:
                 yaxis_id = "y"
                 if loop_count == 0:
-                    update_layout_args["yaxis"] = dict(title=custom_axis_titles.get("y", "縦軸"), tickformat="d", side="left")
+                    update_layout_args["yaxis"] = dict(title=custom_axis_titles.get("y", "縦軸"), side="left")
             else:
                 extra_y_count += 1
                 yaxis_id = f"y{extra_y_count + 1}"
@@ -361,7 +373,6 @@ if st.session_state.datasets:
                 pos_offset = 1.0 + ((extra_y_count - 1) * 0.08)
                 update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
                     title=dict(text=custom_axis_titles.get(f"y_axis_{idx}", f"縦軸 {extra_y_count + 1}")),
-                    tickformat="d",
                     overlaying="y",
                     side="right", 
                     anchor="free",
