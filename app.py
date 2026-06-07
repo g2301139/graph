@@ -120,10 +120,10 @@ if st.session_state.datasets:
             st.markdown("✏️ **軸の名前（ラベル）を編集**")
             label_col1, label_col2 = st.columns(2)
             with label_col1:
-                custom_x_label = st.text_input("横軸（X軸）の表示名", value=x_axis, key=f"label_x_{idx}_{dataset['name']}")
+                custom_x_label = st.text_input("横軸（X軸）の表示名", value=x_axis, key=f"label_x_{idx}")
             with label_col2:
                 default_y_label = ", ".join(y_axes) if y_axes else "値"
-                custom_y_label = st.text_input("縦軸（Y軸）の表示名", value=default_y_label, key=f"label_y_{idx}_{dataset['name']}")
+                custom_y_label = st.text_input("縦軸（Y軸）の表示名", value=default_y_label, key=f"label_y_{idx}")
 
             # 線の引き方・凡例名の個別設定
             line_styles_config = {}
@@ -134,7 +134,6 @@ if st.session_state.datasets:
                     st.markdown(f"**■ 項目: {y_col}**")
                     style_col, name_col = st.columns(2)
                     with style_col:
-                        # ご要望に基づき選択肢を刷新（デフォルトを「点と曲線」に設定しています）
                         line_style = st.selectbox(
                             f"「{y_col}」の表示スタイル", 
                             options=["点（マーカー）のみ", "直線（線のみ）", "曲線（滑らかな線のみ）", "点と直線", "点と曲線", "トレンド線（直線）"], 
@@ -152,30 +151,30 @@ if st.session_state.datasets:
                                 base_name = f"{dataset['name']} ({cat})"
                                 if line_style in ["点と直線", "点と曲線"]:
                                     suffix = "直線" if line_style == "点と直線" else "曲線"
-                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name} (点)", key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
-                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（{suffix}）: {y_col} [{cat}]", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name} (点)", key=f"legname_m_{idx}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（{suffix}）: {y_col} [{cat}]", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{y_col}_{cat}")
                                 elif line_style == "トレンド線（直線）":
-                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name}", key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
-                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（トレンド線）: {y_col} [{cat}]", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=f"{base_name}", key=f"legname_m_{idx}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（トレンド線）: {y_col} [{cat}]", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{y_col}_{cat}")
                                 elif line_style == "点（マーカー）のみ":
-                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=base_name, key=f"legname_m_{idx}_{dataset['name']}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"marker_{cat}"] = st.text_input(f"右側の表示名（点）: {y_col} [{cat}]", value=base_name, key=f"legname_m_{idx}_{y_col}_{cat}")
                                 else: # 直線、曲線
-                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（線）: {y_col} [{cat}]", value=base_name, key=f"legname_l_{idx}_{dataset['name']}_{y_col}_{cat}")
+                                    legend_names_config[y_col][f"line_{cat}"] = st.text_input(f"右側の表示名（線）: {y_col} [{cat}]", value=base_name, key=f"legname_l_{idx}_{y_col}_{cat}")
                         
                         # 通常（色分けなし）の場合
                         else:
                             base_name = f"{dataset['name']}"
                             if line_style in ["点と直線", "点と曲線"]:
                                 suffix = "直線" if line_style == "点と直線" else "曲線"
-                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name} (点)", key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
-                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（{suffix}）", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
+                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name} (点)", key=f"legname_m_{idx}_{y_col}")
+                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（{suffix}）", value=f"{base_name} ({suffix})", key=f"legname_l_{idx}_{y_col}")
                             elif line_style == "トレンド線（直線）":
-                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name}", key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
-                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（トレンド線）", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
+                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=f"{base_name}", key=f"legname_m_{idx}_{y_col}")
+                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（トレンド線）", value=f"{base_name} (トレンド線)", key=f"legname_l_{idx}_{y_col}")
                             elif line_style == "点（マーカー）のみ":
-                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=base_name, key=f"legname_m_{idx}_{dataset['name']}_{y_col}")
+                                legend_names_config[y_col]["marker"] = st.text_input(f"右側の表示名（点）", value=base_name, key=f"legname_m_{idx}_{y_col}")
                             else: # 直線、曲線
-                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（線）", value=base_name, key=f"legname_l_{idx}_{dataset['name']}_{y_col}")
+                                legend_names_config[y_col]["line"] = st.text_input(f"右側の表示名（線）", value=base_name, key=f"legname_l_{idx}_{y_col}")
 
             configs[idx] = {
                 "x_axis": x_axis,
@@ -196,7 +195,6 @@ if st.session_state.datasets:
                     selected_style = line_styles_config.get(y_axis)
                     names = legend_names_config.get(y_axis, {})
                     
-                    # 線の滑らかさの設定
                     shape_mode = "spline" if "曲線" in selected_style else "linear"
                         
                     if color_axis != "なし":
@@ -279,11 +277,11 @@ if st.session_state.datasets:
             
             if loop_count == 0:
                 label_text = "共通の縦軸名（Y軸）" if integrate_scales else f"ベースとなる左側の縦軸名（第1 Y軸: {dataset['name']} 用）"
-                custom_axis_titles["y"] = st.text_input(label_text, value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{dataset['name']}")
+                custom_axis_titles["y"] = st.text_input(label_text, value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{idx}")
             elif not integrate_scales:
                 axis_label_idx += 1
                 label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸: {dataset['name']} 用）"
-                custom_axis_titles[f"y_axis_{idx}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{idx}_{dataset['name']}")
+                custom_axis_titles[f"y_axis_{idx}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{idx}")
 
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Alphabet
