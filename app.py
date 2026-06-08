@@ -105,7 +105,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）★安全なオブジェクト追加方式に変更★
+# 2. グラフの設定（データごと）※不具合を修正
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -170,51 +170,53 @@ if st.session_state.datasets:
                 single_axis_count = len(y_axes)
                 right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
                 
-                # 安全に基本レイアウト（X軸、第1Y軸）のみを初期設定
-                fig.update_layout(
-                    title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
-                    hovermode="closest",
-                    xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound_single)]),
-                    margin=dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
-                )
+                # 最初からベースのレイアウト（X軸と第1Y軸）を定義
+                single_layout_config = {
+                    "title": dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
+                    "hovermode": "closest",
+                    "xaxis": dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound_single)]),
+                    "margin": dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
+                }
                 
-                # 軸オブジェクトを順番に安全に追加設定
+                # エラー回避のため、データをトレースとして追加する前に【先にすべてのY軸レイアウトを確定】させる
                 for y_loop, y_col in enumerate(y_axes):
-                    axis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
+                    layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
                     
-                    # 共通設定項目の作成
-                    axis_args = {
-                        "title": single_y_titles.get(y_col, y_col),
-                        "tickformat": "f"
-                    }
+                    axis_setup = dict(
+                        title=single_y_titles.get(y_col, y_col),
+                        tickformat="f"
+                    )
                     
-                    # 最大・最小値パース
                     try:
                         mn = single_y_mins.get(y_col, "").strip()
                         mx = single_y_maxs.get(y_col, "").strip()
                         if mn != "" and mx != "":
-                            axis_args["range"] = [float(mn), float(mx)]
-                            axis_args["autorange"] = False
+                            axis_setup["range"] = [float(mn), float(mx)]
+                            axis_setup["autorange"] = False
                     except ValueError:
                         pass
-                    
+                        
                     if y_loop == 0:
-                        axis_args["side"] = "left"
-                        fig.update_layout(yaxis=axis_args)
+                        axis_setup["side"] = "left"
                     else:
-                        # 右軸の重なりを防ぐ絶対位置シフト
-                        axis_args.update({
-                            "side": "right",
-                            "overlaying": "y",
-                            "anchor": "free",
-                            "position": 1.0 + ((y_loop - 1) * 0.085)
-                        })
-                        # 動的な名前のキー（yaxis2, yaxis3など）を安全に登録
-                        fig.update_layout({f"yaxis{y_loop + 1}": axis_args})
-                    
-                    # トレース（線・点データ）のプロット
+                        axis_setup.update(dict(
+                            side="right",
+                            overlaying="y",
+                            anchor="free",
+                            position=1.0 + ((y_loop - 1) * 0.085)
+                        ))
+                        
+                    single_layout_config[layout_key] = axis_setup
+                
+                # 先にレイアウトを適用（これで y2, y3 がPlotly側に登録される）
+                fig.update_layout(**single_layout_config)
+                
+                # その後でデータを安全に追加
+                for y_loop, y_col in enumerate(y_axes):
+                    axis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
+                    
                     fig.add_trace(go.Scatter(
                         x=df[x_axis],
                         y=df[y_col],
@@ -228,7 +230,7 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション（ここも完全に安全なオブジェクト方式に修正）
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -276,9 +278,9 @@ if st.session_state.datasets:
                 with t_col:
                     custom_axis_titles[axis_key] = st.text_input("軸の表示名", value="共通縦軸 (Y)" if integrate_scales else cfg["custom_y_label"], key=f"title_{axis_key}")
                 with min_col:
-                    y_min_inputs[axis_key] = st.text_input("最小値（自動なら空欄）", value="", key=f"min_in_{axis_key}")
+                    y_min_inputs[axis_key] = st.text_input("最小値（自動の場合は空欄）", value="", key=f"min_in_{axis_key}")
                 with max_col:
-                    y_max_inputs[axis_key] = st.text_input("最大値（自動なら空欄）", value="", key=f"max_in_{axis_key}")
+                    y_max_inputs[axis_key] = st.text_input("最大値（自動の場合は空欄）", value="", key=f"max_in_{axis_key}")
                 axis_count += 1
             elif not integrate_scales:
                 st.markdown(f"##### 🔸 第{axis_count + 1}縦軸（右側並び）: {dataset['name']} 用")
@@ -286,28 +288,70 @@ if st.session_state.datasets:
                 with t_col:
                     custom_axis_titles[axis_key] = st.text_input("軸の表示名", value=cfg["custom_y_label"], key=f"title_{axis_key}")
                 with min_col:
-                    y_min_inputs[axis_key] = st.text_input("最小値（自動なら空欄）", value="", key=f"min_in_{axis_key}")
+                    y_min_inputs[axis_key] = st.text_input("最小値（自動の場合は空欄）", value="", key=f"min_in_{axis_key}")
                 with max_col:
-                    y_max_inputs[axis_key] = st.text_input("最大値（自動なら空欄）", value="", key=f"max_in_{axis_key}")
+                    y_max_inputs[axis_key] = st.text_input("最大値（自動の場合は空欄）", value="", key=f"max_in_{axis_key}")
                 axis_count += 1
 
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
+        layout_config = {
+            "hovermode": "closest",
+            "margin": dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80)
+        }
+
         first_cfg = configs.get(selected_indices[0])
         merged_x_title = st.text_input("合体グラフの横軸名", value=first_cfg["custom_x_label"] if first_cfg else "X軸", key="m_x_label")
         
         right_bound = 1.0 - (max(0, axis_count - 1) * 0.085)
-        
-        # 合体グラフの土台レイアウト
-        merged_fig.update_layout(
-            hovermode="closest",
-            margin=dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80),
-            xaxis=dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
-        )
+        layout_config["xaxis"] = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
         if custom_x_range_enabled:
-            merged_fig.update_layout(xaxis=dict(range=[x_min_val, x_max_val]))
+            layout_config["xaxis"]["range"] = [x_min_val, x_max_val]
+
+        right_axis_idx = 0
+        for loop_count, idx in enumerate(selected_indices):
+            cfg = configs.get(idx)
+            if not cfg or not cfg["y_axes"]: continue
+
+            if loop_count == 0 or integrate_scales:
+                layout_key = "yaxis"
+            else:
+                right_axis_idx += 1
+                layout_key = f"yaxis{right_axis_idx + 1}"
+
+            axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
+
+            if layout_key not in layout_config:
+                axis_setup = dict(
+                    title=custom_axis_titles.get(axis_key, "値"),
+                    tickformat="f"
+                )
+                
+                try:
+                    mn = y_min_inputs.get(axis_key, "").strip()
+                    mx = y_max_inputs.get(axis_key, "").strip()
+                    if mn != "" and mx != "":
+                        axis_setup["range"] = [float(mn), float(mx)]
+                        axis_setup["autorange"] = False
+                except ValueError:
+                    pass
+
+                if loop_count == 0 or integrate_scales:
+                    axis_setup["side"] = "left"
+                else:
+                    axis_setup.update(dict(
+                        side="right",
+                        overlaying="y",
+                        anchor="free",
+                        position=1.0 + ((right_axis_idx - 1) * 0.085)
+                    ))
+                
+                layout_config[layout_key] = axis_setup
+
+        # 合体グラフ側も先に全体の軸定義を読み込ませる
+        merged_fig.update_layout(**layout_config)
 
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
@@ -318,42 +362,10 @@ if st.session_state.datasets:
 
             if loop_count == 0 or integrate_scales:
                 axis_id = "y"
-                layout_key = "yaxis"
             else:
                 right_axis_idx += 1
                 axis_id = f"y{right_axis_idx + 1}"
-                layout_key = f"yaxis{right_axis_idx + 1}"
 
-            axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
-
-            axis_setup = dict(
-                title=custom_axis_titles.get(axis_key, "値"),
-                tickformat="f"
-            )
-            
-            try:
-                mn = y_min_inputs.get(axis_key, "").strip()
-                mx = y_max_inputs.get(axis_key, "").strip()
-                if mn != "" and mx != "":
-                    axis_setup["range"] = [float(mn), float(mx)]
-                    axis_setup["autorange"] = False
-            except ValueError:
-                pass
-
-            if loop_count == 0 or integrate_scales:
-                axis_setup["side"] = "left"
-            else:
-                axis_setup.update(dict(
-                    side="right",
-                    overlaying="y",
-                    anchor="free",
-                    position=1.0 + ((right_axis_idx - 1) * 0.085)
-                ))
-            
-            # 安全に1つの軸レイアウトずつ適用
-            merged_fig.update_layout({layout_key: axis_setup})
-
-            # データの紐付け
             for y_axis in cfg["y_axes"]:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
