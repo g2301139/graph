@@ -268,7 +268,6 @@ if st.session_state.datasets:
                             x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                             if x_t is not None: fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=names.get("line")))
                 
-                # tickformat="f" で数値をそのまま全桁表示に強制
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     xaxis=dict(title=custom_x_label, tickformat="f"), 
@@ -310,14 +309,16 @@ if st.session_state.datasets:
                 with range_col2:
                     x_max_val = st.number_input("横軸の最大値 (Max)", value=5000000.0, step=1.0, key="x_range_max")
 
-        st.markdown("✏️ **合体グラフの軸ラベル名編集**")
+        st.markdown("✏️ **合体グラフの軸ラベル・表示範囲（最大・最小）の設定**")
         
         first_cfg = configs.get(selected_indices[0]) if selected_indices else None
         default_merged_x_label = first_cfg["custom_x_label"] if first_cfg else "共通横軸 (X)"
         merged_x_title = st.text_input("合体グラフの横軸（X軸）名", value=default_merged_x_label, key="merged_label_x")
 
         custom_axis_titles = {}
+        custom_y_ranges = {}
         axis_label_idx = 0
+        
         for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
             cfg = configs.get(idx)
@@ -325,13 +326,38 @@ if st.session_state.datasets:
             
             default_title = cfg["custom_y_label"]
             
+            # 各縦軸の設定フォームを作る
             if loop_count == 0:
                 label_text = "共通の縦軸名（Y軸）" if integrate_scales else f"ベースとなる左側の縦軸名（第1 Y軸: {dataset['name']} 用）"
-                custom_axis_titles["y"] = st.text_input(label_text, value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{idx}")
-            elif not integrate_scales:
-                axis_label_idx += 1
-                label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸: {dataset['name']} 用）"
-                custom_axis_titles[f"y_axis_{idx}"] = st.text_input(label_text, value=default_title, key=f"custom_title_y_{idx}")
+                st.markdown(f"**■ {label_text}**")
+                title_col, range_check_col, min_col, max_col = st.columns([2, 1, 1, 1])
+                with title_col:
+                    custom_axis_titles["y"] = st.text_input("軸の表示名", value="共通縦軸 (Y)" if integrate_scales else default_title, key=f"custom_title_y_{idx}", label_visibility="collapsed")
+                with range_check_col:
+                    y_range_enabled = st.checkbox("範囲を手動指定", value=False, key=f"y_range_enable_{idx}")
+                with min_col:
+                    y_min = st.number_input("最小値", value=0.0, key=f"y_min_{idx}", disabled=not y_range_enabled)
+                with max_col:
+                    y_max = st.number_input("最大値", value=100.0, key=f"y_max_{idx}", disabled=not y_range_enabled)
+                if y_range_enabled:
+                    custom_y_ranges["y"] = [y_min, y_max]
+                    
+            else:
+                if not integrate_scales:
+                    axis_label_idx += 1
+                    label_text = f"右側に追加される縦軸名（第{axis_label_idx + 1} Y軸: {dataset['name']} 用）"
+                    st.markdown(f"**■ {label_text}**")
+                    title_col, range_check_col, min_col, max_col = st.columns([2, 1, 1, 1])
+                    with title_col:
+                        custom_axis_titles[f"y_axis_{idx}"] = st.text_input("軸の表示名", value=default_title, key=f"custom_title_y_{idx}", label_visibility="collapsed")
+                    with range_check_col:
+                        y_range_enabled = st.checkbox("範囲を手動指定", value=False, key=f"y_range_enable_{idx}")
+                    with min_col:
+                        y_min = st.number_input("最小値", value=0.0, key=f"y_min_{idx}", disabled=not y_range_enabled)
+                    with max_col:
+                        y_max = st.number_input("最大値", value=100.0, key=f"y_max_{idx}", disabled=not y_range_enabled)
+                    if y_range_enabled:
+                        custom_y_ranges[f"y_axis_{idx}"] = [y_min, y_max]
 
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Alphabet
@@ -354,7 +380,6 @@ if st.session_state.datasets:
             # --- 軸の配置ロジック ---
             xaxis_id = "x"
             if loop_count == 0:
-                # tickformat="f" を適用し、数値をそのまま表示
                 xaxis_dict = dict(title=merged_x_title, side="bottom", tickformat="f")
                 if custom_x_range_enabled:
                     xaxis_dict["range"] = [x_min_val, x_max_val]
@@ -363,20 +388,30 @@ if st.session_state.datasets:
             if loop_count == 0 or integrate_scales:
                 yaxis_id = "y"
                 if loop_count == 0:
-                    update_layout_args["yaxis"] = dict(title=custom_axis_titles.get("y", "縦軸"), side="left", tickformat="f")
+                    y_dict = dict(title=custom_axis_titles.get("y", "縦軸"), side="left", tickformat="f")
+                    if "y" in custom_y_ranges:
+                        y_dict["range"] = custom_y_ranges["y"]
+                    update_layout_args["yaxis"] = y_dict
             else:
                 extra_y_count += 1
                 yaxis_id = f"y{extra_y_count + 1}"
                 
-                pos_offset = 1.0 + ((extra_y_count - 1) * 0.08)
-                update_layout_args[f"yaxis{extra_y_count + 1}"] = dict(
+                # 【修正ポイント】右側の軸同士が重ならないよう、1軸ごとに0.085ずつ外側にシフト。
+                # anchor="free" に設定することで、positionの数値通りに配置されます。
+                pos_offset = 1.0 + ((extra_y_count - 1) * 0.085)
+                
+                y_dict = dict(
                     title=dict(text=custom_axis_titles.get(f"y_axis_{idx}", f"縦軸 {extra_y_count + 1}")),
                     overlaying="y",
                     side="right", 
                     anchor="free",
                     position=pos_offset,
-                    tickformat="f" # 追加された軸にも適用
+                    tickformat="f"
                 )
+                if f"y_axis_{idx}" in custom_y_ranges:
+                    y_dict["range"] = custom_y_ranges[f"y_axis_{idx}"]
+                    
+                update_layout_args[f"yaxis{extra_y_count + 1}"] = y_dict
 
             # データのプロット
             for y_axis in cfg["y_axes"]:
@@ -420,7 +455,8 @@ if st.session_state.datasets:
                         x_t, y_t = get_trendline_data(df, x_axis, y_axis)
                         if x_t is not None: merged_fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color), name=names.get("line"), xaxis=trace_xaxis, yaxis=trace_yaxis))
 
-        right_margin = 50 + (max(0, extra_y_count) * 75)
+        # 【修正ポイント】右側にはみ出る複数の軸が途切れないよう、軸の数に応じて右余白（r）を動的に広げる
+        right_margin = 60 + (max(0, extra_y_count) * 85)
         update_layout_args["margin"] = dict(l=80, r=right_margin)
 
         # レイアウト適用
