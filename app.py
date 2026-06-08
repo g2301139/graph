@@ -105,7 +105,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）★グラフの形状・線種を復活させました★
+# 2. グラフの設定（データごと） ★3つ以上のマルチY軸エラーを完全修正★
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -141,7 +141,7 @@ if st.session_state.datasets:
             single_y_titles = {}
             single_y_mins = {}
             single_y_maxs = {}
-            single_y_shapes = {} # 形状保存用
+            single_y_shapes = {}
             
             if y_axes:
                 for y_loop, y_col in enumerate(y_axes):
@@ -154,7 +154,6 @@ if st.session_state.datasets:
                     with t_col:
                         single_y_titles[y_col] = st.text_input(f"軸名 [{y_col}]", value=y_col, key=f"single_title_{idx}_{y_col}")
                     with shape_col:
-                        # グラフ形状の選択UIを復活
                         single_y_shapes[y_col] = st.selectbox(
                             f"グラフの形状",
                             options=["直線（マーカーあり）", "なめらかな曲線", "点のみ", "直線のみ"],
@@ -169,7 +168,7 @@ if st.session_state.datasets:
             configs[idx] = {
                 "x_axis": x_axis, "y_axes": y_axes, "color_axis": color_axis,
                 "custom_x_label": custom_x_label, "custom_y_label": custom_y_label,
-                "shapes": single_y_shapes # 後段に引き渡せるように記録
+                "shapes": single_y_shapes
             }
 
             if y_axes:
@@ -180,7 +179,7 @@ if st.session_state.datasets:
                 single_axis_count = len(y_axes)
                 right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
                 
-                # 安全に基本レイアウトを設定
+                # 基本レイアウト（X軸など）の設定
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
@@ -188,7 +187,7 @@ if st.session_state.datasets:
                     margin=dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
                 )
                 
-                # 先に安全にすべてのY軸構造を宣言
+                # Y軸の動的な設定を、エラーの起きない安全なキーワード引数展開に修正
                 for y_loop, y_col in enumerate(y_axes):
                     layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
                     
@@ -208,7 +207,6 @@ if st.session_state.datasets:
                     
                     if y_loop == 0:
                         axis_args["side"] = "left"
-                        fig.update_layout(yaxis=axis_args)
                     else:
                         axis_args.update({
                             "side": "right",
@@ -216,9 +214,11 @@ if st.session_state.datasets:
                             "anchor": "free",
                             "position": 1.0 + ((y_loop - 1) * 0.085)
                         })
-                        fig.update_layout({f"yaxis{y_loop + 1}": axis_args})
                     
-                    # 選択された形状に基づいてPlotlyのmodeとline_shapeパラメータを生成
+                    # ★ここを修正：辞書ごと展開（**{layout_key: ...}）して渡すことでPlotlyの制限を回避
+                    fig.update_layout(**{layout_key: axis_args})
+                    
+                    # 形状の適用
                     chosen_shape = single_y_shapes.get(y_col, "直線（マーカーあり）")
                     line_config = dict()
                     
@@ -226,7 +226,7 @@ if st.session_state.datasets:
                         plot_mode = "lines+markers"
                     elif chosen_shape == "なめらかな曲線":
                         plot_mode = "lines+markers"
-                        line_config["shape"] = "spline" # 滑らかにする設定
+                        line_config["shape"] = "spline"
                     elif chosen_shape == "点のみ":
                         plot_mode = "markers"
                     elif chosen_shape == "直線のみ":
@@ -236,7 +236,6 @@ if st.session_state.datasets:
                     
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
-                    
                     line_config["color"] = color
                     
                     fig.add_trace(go.Scatter(
@@ -252,7 +251,7 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション
+    # 3. グラフの合体セクション ★合体側も3つ以上のマルチY軸エラーを対策★
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -369,7 +368,8 @@ if st.session_state.datasets:
                     position=1.0 + ((right_axis_idx - 1) * 0.085)
                 ))
             
-            merged_fig.update_layout({layout_key: axis_setup})
+            # ★合体側も同様に、引数展開（**{}）を使って安全に設定をアップデート
+            merged_fig.update_layout(**{layout_key: axis_setup})
 
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
@@ -388,7 +388,6 @@ if st.session_state.datasets:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
                 
-                # 合体グラフ側にも、個別設定した形状（直線・曲線・点）をそのまま引き継いで反映
                 saved_shapes = cfg.get("shapes", {})
                 chosen_shape = saved_shapes.get(y_axis, "直線（マーカーあり）")
                 line_config_merged = dict(color=color)
