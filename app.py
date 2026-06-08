@@ -105,7 +105,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）★ここを大幅修正しました★
+# 2. グラフの設定（データごと）※不具合を修正
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -137,7 +137,6 @@ if st.session_state.datasets:
                 default_y_label = ", ".join(y_axes) if y_axes else "値"
                 custom_y_label = st.text_input("全体の縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
 
-            # 各縦軸の範囲（最小値・最大値）を個別入力できるエリア
             st.markdown("✏️ **個別グラフの各縦軸ラベル名と範囲設定（最大・最小）**")
             single_y_titles = {}
             single_y_mins = {}
@@ -145,7 +144,6 @@ if st.session_state.datasets:
             
             if y_axes:
                 for y_loop, y_col in enumerate(y_axes):
-                    # 各Y軸ごとの設定入力UI
                     if y_loop == 0:
                         st.markdown(f"##### 🔹 第1縦軸（左側）: 「{y_col}」用")
                     else:
@@ -164,16 +162,15 @@ if st.session_state.datasets:
                 "custom_x_label": custom_x_label, "custom_y_label": custom_y_label
             }
 
-            # 個別グラフの描画処理（マルチY軸の被り対策を適用）
             if y_axes:
                 fig = go.Figure()
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
                 
-                # 右側の軸スペース確保の計算
                 single_axis_count = len(y_axes)
                 right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
                 
+                # 最初からベースのレイアウト（X軸と第1Y軸）を定義
                 single_layout_config = {
                     "title": dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     "hovermode": "closest",
@@ -181,22 +178,15 @@ if st.session_state.datasets:
                     "margin": dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
                 }
                 
+                # エラー回避のため、データをトレースとして追加する前に【先にすべてのY軸レイアウトを確定】させる
                 for y_loop, y_col in enumerate(y_axes):
-                    # トレース用IDとレイアウトキーの設定
-                    if y_loop == 0:
-                        axis_id = "y"
-                        layout_key = "yaxis"
-                    else:
-                        axis_id = f"y{y_loop + 1}"
-                        layout_key = f"yaxis{y_loop + 1}"
-                        
-                    # 軸レイアウトの構築
+                    layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
+                    
                     axis_setup = dict(
                         title=single_y_titles.get(y_col, y_col),
                         tickformat="f"
                     )
                     
-                    # 最小・最大値の適用
                     try:
                         mn = single_y_mins.get(y_col, "").strip()
                         mx = single_y_maxs.get(y_col, "").strip()
@@ -209,7 +199,6 @@ if st.session_state.datasets:
                     if y_loop == 0:
                         axis_setup["side"] = "left"
                     else:
-                        # 右側に絶対に被らないようにずらして並べる
                         axis_setup.update(dict(
                             side="right",
                             overlaying="y",
@@ -218,10 +207,16 @@ if st.session_state.datasets:
                         ))
                         
                     single_layout_config[layout_key] = axis_setup
-                    
-                    # トレース追加
+                
+                # 先にレイアウトを適用（これで y2, y3 がPlotly側に登録される）
+                fig.update_layout(**single_layout_config)
+                
+                # その後でデータを安全に追加
+                for y_loop, y_col in enumerate(y_axes):
+                    axis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
+                    
                     fig.add_trace(go.Scatter(
                         x=df[x_axis],
                         y=df[y_col],
@@ -232,11 +227,10 @@ if st.session_state.datasets:
                         yaxis=axis_id
                     ))
                     
-                fig.update_layout(**single_layout_config)
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション（前回同様に確実に動作）
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -318,17 +312,13 @@ if st.session_state.datasets:
 
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
-            dataset = st.session_state.datasets[idx]
-            df = dataset["df"]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
             if loop_count == 0 or integrate_scales:
-                axis_id = "y"
                 layout_key = "yaxis"
             else:
                 right_axis_idx += 1
-                axis_id = f"y{right_axis_idx + 1}"
                 layout_key = f"yaxis{right_axis_idx + 1}"
 
             axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
@@ -360,6 +350,22 @@ if st.session_state.datasets:
                 
                 layout_config[layout_key] = axis_setup
 
+        # 合体グラフ側も先に全体の軸定義を読み込ませる
+        merged_fig.update_layout(**layout_config)
+
+        right_axis_idx = 0
+        for loop_count, idx in enumerate(selected_indices):
+            dataset = st.session_state.datasets[idx]
+            df = dataset["df"]
+            cfg = configs.get(idx)
+            if not cfg or not cfg["y_axes"]: continue
+
+            if loop_count == 0 or integrate_scales:
+                axis_id = "y"
+            else:
+                right_axis_idx += 1
+                axis_id = f"y{right_axis_idx + 1}"
+
             for y_axis in cfg["y_axes"]:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
@@ -374,7 +380,6 @@ if st.session_state.datasets:
                     yaxis=axis_id
                 ))
 
-        merged_fig.update_layout(**layout_config)
         st.subheader("📉 合体したグラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=600, key="final_merged_chart")
 else:
