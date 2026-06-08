@@ -66,7 +66,6 @@ if submit_button and paste_input.strip():
     except Exception as e:
         st.error(f"データの読み込みに失敗しました。エラー: {e}")
 
-# 登録データの一覧表示
 if st.session_state.datasets:
     st.subheader("現在登録されているデータ一覧")
     cols = st.columns(len(st.session_state.datasets) + 1)
@@ -105,17 +104,8 @@ if st.session_state.datasets:
                     st.session_state.editing_idx = None
                     st.rerun()
 
-def get_trendline_data(dataframe, x_col, y_col):
-    try:
-        x_vals = pd.to_numeric(dataframe[x_col]).values
-        y_vals = pd.to_numeric(dataframe[y_col]).values
-        ridx = np.isfinite(x_vals) & np.isfinite(y_vals)
-        a, b = np.polyfit(x_vals[ridx], y_vals[ridx], 1)
-        return np.array([min(x_vals), max(x_vals)]), a * np.array([min(x_vals), max(x_vals)]) + b
-    except: return None, None
-
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）
+# 2. グラフの設定（データごと）★ここを大幅修正しました★
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -145,36 +135,108 @@ if st.session_state.datasets:
                 custom_x_label = st.text_input("横軸の表示名", value=x_axis, key=f"label_x_{idx}")
             with label_col2:
                 default_y_label = ", ".join(y_axes) if y_axes else "値"
-                custom_y_label = st.text_input("縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
+                custom_y_label = st.text_input("全体の縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
 
-            line_styles_config = {}
-            legend_names_config = {}
+            # 各縦軸の範囲（最小値・最大値）を個別入力できるエリア
+            st.markdown("✏️ **個別グラフの各縦軸ラベル名と範囲設定（最大・最小）**")
+            single_y_titles = {}
+            single_y_mins = {}
+            single_y_maxs = {}
+            
             if y_axes:
-                for y_col in y_axes:
-                    style_col, name_col = st.columns(2)
-                    with style_col:
-                        line_style = st.selectbox(f"「{y_col}」のスタイル", options=["点（マーカー）のみ", "直線（線のみ）", "曲線（滑らかな線のみ）", "点と直線", "点と曲線", "トレンド線（直線）"], index=3, key=f"style_{idx}_{y_col}")
-                        line_styles_config[y_col] = line_style
-                    with name_col:
-                        legend_names_config[y_col] = {}
-                        base_name = f"{dataset['name']}"
-                        legend_names_config[y_col]["marker"] = st.text_input(f"凡例名（点）: {y_col}", value=f"{base_name} ({y_col})", key=f"legname_m_{idx}_{y_col}")
+                for y_loop, y_col in enumerate(y_axes):
+                    # 各Y軸ごとの設定入力UI
+                    if y_loop == 0:
+                        st.markdown(f"##### 🔹 第1縦軸（左側）: 「{y_col}」用")
+                    else:
+                        st.markdown(f"##### 🔸 第{y_loop + 1}縦軸（右側）: 「{y_col}」用")
+                        
+                    t_col, min_col, max_col = st.columns([2, 1, 1])
+                    with t_col:
+                        single_y_titles[y_col] = st.text_input(f"軸名 [{y_col}]", value=y_col, key=f"single_title_{idx}_{y_col}")
+                    with min_col:
+                        single_y_mins[y_col] = st.text_input(f"最小値（空欄で自動）", value="", key=f"single_min_{idx}_{y_col}")
+                    with max_col:
+                        single_y_maxs[y_col] = st.text_input(f"最大値（空欄で自動）", value="", key=f"single_max_{idx}_{y_col}")
 
             configs[idx] = {
                 "x_axis": x_axis, "y_axes": y_axes, "color_axis": color_axis,
-                "line_styles": line_styles_config, "legend_names": legend_names_config,
                 "custom_x_label": custom_x_label, "custom_y_label": custom_y_label
             }
 
+            # 個別グラフの描画処理（マルチY軸の被り対策を適用）
             if y_axes:
                 fig = go.Figure()
-                for y_axis in y_axes:
-                    fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_axis], mode="lines+markers", name=y_axis))
-                fig.update_layout(xaxis=dict(title=custom_x_label, tickformat="f"), yaxis=dict(title=custom_y_label, tickformat="f"))
+                color_cycle = px.colors.qualitative.Plotly
+                color_idx = 0
+                
+                # 右側の軸スペース確保の計算
+                single_axis_count = len(y_axes)
+                right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
+                
+                single_layout_config = {
+                    "title": dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
+                    "hovermode": "closest",
+                    "xaxis": dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound_single)]),
+                    "margin": dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
+                }
+                
+                for y_loop, y_col in enumerate(y_axes):
+                    # トレース用IDとレイアウトキーの設定
+                    if y_loop == 0:
+                        axis_id = "y"
+                        layout_key = "yaxis"
+                    else:
+                        axis_id = f"y{y_loop + 1}"
+                        layout_key = f"yaxis{y_loop + 1}"
+                        
+                    # 軸レイアウトの構築
+                    axis_setup = dict(
+                        title=single_y_titles.get(y_col, y_col),
+                        tickformat="f"
+                    )
+                    
+                    # 最小・最大値の適用
+                    try:
+                        mn = single_y_mins.get(y_col, "").strip()
+                        mx = single_y_maxs.get(y_col, "").strip()
+                        if mn != "" and mx != "":
+                            axis_setup["range"] = [float(mn), float(mx)]
+                            axis_setup["autorange"] = False
+                    except ValueError:
+                        pass
+                        
+                    if y_loop == 0:
+                        axis_setup["side"] = "left"
+                    else:
+                        # 右側に絶対に被らないようにずらして並べる
+                        axis_setup.update(dict(
+                            side="right",
+                            overlaying="y",
+                            anchor="free",
+                            position=1.0 + ((y_loop - 1) * 0.085)
+                        ))
+                        
+                    single_layout_config[layout_key] = axis_setup
+                    
+                    # トレース追加
+                    color = color_cycle[color_idx % len(color_cycle)]
+                    color_idx += 1
+                    fig.add_trace(go.Scatter(
+                        x=df[x_axis],
+                        y=df[y_col],
+                        mode="lines+markers",
+                        line=dict(color=color),
+                        marker=dict(color=color),
+                        name=y_col,
+                        yaxis=axis_id
+                    ))
+                    
+                fig.update_layout(**single_layout_config)
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション
+    # 3. グラフの合体セクション（前回同様に確実に動作）
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -214,7 +276,6 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
             
-            # 軸ごとの一意のキー文字列を定義
             axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
             
             if loop_count == 0:
@@ -238,27 +299,23 @@ if st.session_state.datasets:
                     y_max_inputs[axis_key] = st.text_input("最大値（自動の場合は空欄）", value="", key=f"max_in_{axis_key}")
                 axis_count += 1
 
-        # グラフ描画ロジック開始
         merged_fig = go.Figure()
-        color_cycle = px.colors.qualitative.Plotly
-        color_idx = 0
+        color_cycle_merged = px.colors.qualitative.Plotly
+        color_idx_merged = 0
         
         layout_config = {
             "hovermode": "closest",
             "margin": dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80)
         }
 
-        # X軸設定
         first_cfg = configs.get(selected_indices[0])
         merged_x_title = st.text_input("合体グラフの横軸名", value=first_cfg["custom_x_label"] if first_cfg else "X軸", key="m_x_label")
         
-        # 右側の軸スペースを作るためにメイングラフエリア（domain）の右端を削る
         right_bound = 1.0 - (max(0, axis_count - 1) * 0.085)
         layout_config["xaxis"] = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
         if custom_x_range_enabled:
             layout_config["xaxis"]["range"] = [x_min_val, x_max_val]
 
-        # Y軸の設定とデータのマッピング
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
             dataset = st.session_state.datasets[idx]
@@ -266,7 +323,6 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            # トレースが参照するY軸IDと、レイアウトキーを確定
             if loop_count == 0 or integrate_scales:
                 axis_id = "y"
                 layout_key = "yaxis"
@@ -277,14 +333,12 @@ if st.session_state.datasets:
 
             axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
 
-            # レイアウト初期化（まだ未設定の場合のみ）
             if layout_key not in layout_config:
                 axis_setup = dict(
                     title=custom_axis_titles.get(axis_key, "値"),
                     tickformat="f"
                 )
                 
-                # 手動の最大値・最小値をパースして適用
                 try:
                     mn = y_min_inputs.get(axis_key, "").strip()
                     mx = y_max_inputs.get(axis_key, "").strip()
@@ -297,7 +351,6 @@ if st.session_state.datasets:
                 if loop_count == 0 or integrate_scales:
                     axis_setup["side"] = "left"
                 else:
-                    # 右側に並べる。絶対に重ならないようpositionを1軸ごとに外へずらす
                     axis_setup.update(dict(
                         side="right",
                         overlaying="y",
@@ -307,10 +360,9 @@ if st.session_state.datasets:
                 
                 layout_config[layout_key] = axis_setup
 
-            # トレース（線・点）を追加
             for y_axis in cfg["y_axes"]:
-                color = color_cycle[color_idx % len(color_cycle)]
-                color_idx += 1
+                color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
+                color_idx_merged += 1
                 
                 merged_fig.add_trace(go.Scatter(
                     x=df[cfg["x_axis"]],
@@ -325,3 +377,5 @@ if st.session_state.datasets:
         merged_fig.update_layout(**layout_config)
         st.subheader("📉 合体したグラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=600, key="final_merged_chart")
+else:
+    st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
