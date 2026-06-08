@@ -213,7 +213,8 @@ if st.session_state.datasets:
                             "position": 1.0 + ((y_loop - 1) * 0.085)
                         })
                     
-                    fig.update_layout(**{layout_key: axis_args})
+                    # ★修正箇所1: 動的な yaxis キーでも安全に代入できるように修正
+                    fig.layout[layout_key] = axis_args
                     
                     chosen_shape = single_y_shapes.get(y_col, "直線（マーカーあり）")
                     line_config = dict()
@@ -247,7 +248,7 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション ★X軸手動設定のエラーも完全修正★
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -319,7 +320,6 @@ if st.session_state.datasets:
         
         right_bound = 1.0 - (max(0, axis_count - 1) * 0.085)
         
-        # 安全な型でベースのX軸を構築
         xaxis_setup = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
         if custom_x_range_enabled:
             xaxis_setup["range"] = [x_min_val, x_max_val]
@@ -328,7 +328,7 @@ if st.session_state.datasets:
         merged_fig.update_layout(
             hovermode="closest",
             margin=dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80),
-            xaxis=xaxis_setup # まとめて適用
+            xaxis=xaxis_setup
         )
 
         right_axis_idx = 0
@@ -368,7 +368,8 @@ if st.session_state.datasets:
                     position=1.0 + ((right_axis_idx - 1) * 0.085)
                 ))
             
-            merged_fig.update_layout(**{layout_key: axis_setup})
+            # ★修正箇所2: 合体グラフ側も同様に安全に代入できるよう修正
+            merged_fig.layout[layout_key] = axis_setup
 
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
