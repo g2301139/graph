@@ -105,7 +105,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと） ★3つ以上のマルチY軸エラーを完全修正★
+# 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -179,7 +179,6 @@ if st.session_state.datasets:
                 single_axis_count = len(y_axes)
                 right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
                 
-                # 基本レイアウト（X軸など）の設定
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
@@ -187,7 +186,6 @@ if st.session_state.datasets:
                     margin=dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
                 )
                 
-                # Y軸の動的な設定を、エラーの起きない安全なキーワード引数展開に修正
                 for y_loop, y_col in enumerate(y_axes):
                     layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
                     
@@ -215,10 +213,8 @@ if st.session_state.datasets:
                             "position": 1.0 + ((y_loop - 1) * 0.085)
                         })
                     
-                    # ★ここを修正：辞書ごと展開（**{layout_key: ...}）して渡すことでPlotlyの制限を回避
                     fig.update_layout(**{layout_key: axis_args})
                     
-                    # 形状の適用
                     chosen_shape = single_y_shapes.get(y_col, "直線（マーカーあり）")
                     line_config = dict()
                     
@@ -251,7 +247,7 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション ★合体側も3つ以上のマルチY軸エラーを対策★
+    # 3. グラフの合体セクション ★X軸手動設定のエラーも完全修正★
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
@@ -323,13 +319,17 @@ if st.session_state.datasets:
         
         right_bound = 1.0 - (max(0, axis_count - 1) * 0.085)
         
+        # 安全な型でベースのX軸を構築
+        xaxis_setup = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
+        if custom_x_range_enabled:
+            xaxis_setup["range"] = [x_min_val, x_max_val]
+            xaxis_setup["autorange"] = False
+            
         merged_fig.update_layout(
             hovermode="closest",
             margin=dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80),
-            xaxis=dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
+            xaxis=xaxis_setup # まとめて適用
         )
-        if custom_x_range_enabled:
-            merged_fig.update_layout(xaxis=dict(range=[x_min_val, x_max_val]))
 
         right_axis_idx = 0
         for loop_count, idx in enumerate(selected_indices):
@@ -368,7 +368,6 @@ if st.session_state.datasets:
                     position=1.0 + ((right_axis_idx - 1) * 0.085)
                 ))
             
-            # ★合体側も同様に、引数展開（**{}）を使って安全に設定をアップデート
             merged_fig.update_layout(**{layout_key: axis_setup})
 
         right_axis_idx = 0
