@@ -177,13 +177,14 @@ if st.session_state.datasets:
                 color_idx = 0
                 
                 single_axis_count = len(y_axes)
-                right_bound_single = 1.0 - (max(0, single_axis_count - 1) * 0.085)
+                # 軸が増えても1.0を超えないようドメイン幅を確保
+                left_domain_end = max(0.1, 1.0 - (max(0, single_axis_count - 1) * 0.06))
                 
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
-                    xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound_single)]),
-                    margin=dict(l=80, r=50 + (max(0, single_axis_count - 1) * 90), t=50, b=80)
+                    xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0.0, left_domain_end]),
+                    margin=dict(l=60, r=20 + (max(0, single_axis_count - 1) * 60), t=50, b=60)
                 )
                 
                 for y_loop, y_col in enumerate(y_axes):
@@ -206,14 +207,14 @@ if st.session_state.datasets:
                     if y_loop == 0:
                         axis_args["side"] = "left"
                     else:
+                        # ★修正箇所1: positionが絶対に1.0を超えないよう安全に配置
                         axis_args.update({
                             "side": "right",
                             "overlaying": "y",
                             "anchor": "free",
-                            "position": 1.0 + ((y_loop - 1) * 0.085)
+                            "position": min(1.0, 1.0 - (max(0, single_axis_count - 1 - y_loop) * 0.04))
                         })
                     
-                    # ★修正箇所1: 動的な yaxis キーでも安全に代入できるように修正
                     fig.layout[layout_key] = axis_args
                     
                     chosen_shape = single_y_shapes.get(y_col, "直線（マーカーあり）")
@@ -318,16 +319,16 @@ if st.session_state.datasets:
         first_cfg = configs.get(selected_indices[0])
         merged_x_title = st.text_input("合体グラフの横軸名", value=first_cfg["custom_x_label"] if first_cfg else "X軸", key="m_x_label")
         
-        right_bound = 1.0 - (max(0, axis_count - 1) * 0.085)
+        right_bound = max(0.1, 1.0 - (max(0, axis_count - 1) * 0.06))
         
-        xaxis_setup = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0, min(1.0, right_bound)])
+        xaxis_setup = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0.0, right_bound])
         if custom_x_range_enabled:
             xaxis_setup["range"] = [x_min_val, x_max_val]
             xaxis_setup["autorange"] = False
             
         merged_fig.update_layout(
             hovermode="closest",
-            margin=dict(l=80, r=50 + (max(0, axis_count - 1) * 90), t=50, b=80),
+            margin=dict(l=60, r=20 + (max(0, axis_count - 1) * 60), t=50, b=60),
             xaxis=xaxis_setup
         )
 
@@ -361,14 +362,14 @@ if st.session_state.datasets:
             if loop_count == 0 or integrate_scales:
                 axis_setup["side"] = "left"
             else:
+                # ★修正箇所2: 合体グラフ側も同様にposition上限を安全に計算
                 axis_setup.update(dict(
                     side="right",
                     overlaying="y",
                     anchor="free",
-                    position=1.0 + ((right_axis_idx - 1) * 0.085)
+                    position=min(1.0, 1.0 - (max(0, axis_count - 1 - right_axis_idx) * 0.04))
                 ))
             
-            # ★修正箇所2: 合体グラフ側も同様に安全に代入できるよう修正
             merged_fig.layout[layout_key] = axis_setup
 
         right_axis_idx = 0
