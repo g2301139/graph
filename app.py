@@ -251,7 +251,6 @@ if st.session_state.datasets:
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        # 画面の余白配分を計算（軸が増えるほどグラフ描画エリアを内側に狭める）
         dataset_count = len(selected_indices)
         left_xaxis_domain = max(0.15, 0.0 + ((dataset_count - 1) * 0.05))
         right_xaxis_domain = min(0.85, 1.0 - ((dataset_count - 1) * 0.05))
@@ -267,7 +266,6 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg: continue
             
-            # Plotlyの軸識別キー (1番目は無印、2番目は 2, 3番目は 3...)
             suffix = "" if loop_idx == 0 else f"{loop_idx + 1}"
             x_layout_key = f"xaxis{suffix}"
             y_layout_key = f"yaxis{suffix}"
@@ -277,13 +275,10 @@ if st.session_state.datasets:
             if loop_idx == 0:
                 x_setup.update(dict(side="bottom", domain=[left_xaxis_domain, right_xaxis_domain]))
             else:
-                # 2つ目以降の横軸は上下に分散配置
                 side_pos = "top" if loop_idx % 2 == 1 else "bottom"
                 offset = (loop_idx // 2) * 0.08
                 x_setup.update(dict(
-                    side=side_pos,
-                    overlaying="x",
-                    anchor="free",
+                    side=side_pos, overlaying="x", anchor="free",
                     position=max(0.0, min(1.0, (0.0 - offset) if side_pos == "bottom" else (1.0 + offset)))
                 ))
             merged_fig.layout[x_layout_key] = x_setup
@@ -293,13 +288,10 @@ if st.session_state.datasets:
             if loop_idx == 0:
                 y_setup.update(dict(side="left", anchor="x"))
             else:
-                # 2つ目以降の縦軸は左右に分散配置
                 side_pos = "right" if loop_idx % 2 == 1 else "left"
                 offset = (loop_idx // 2) * 0.06
                 y_setup.update(dict(
-                    side=side_pos,
-                    overlaying="y",
-                    anchor="free",
+                    side=side_pos, overlaying="y", anchor="free",
                     position=max(0.0, min(1.0, (left_xaxis_domain - offset) if side_pos == "left" else (right_xaxis_domain + offset)))
                 ))
             merged_fig.layout[y_layout_key] = y_setup
@@ -311,11 +303,11 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            # このデータセットが使う軸のIDを指定
             suffix = "" if loop_idx == 0 else f"{loop_idx + 1}"
             target_xaxis = f"x{suffix}"
             target_yaxis = f"y{suffix}"
 
+            # ★各データセットが選択したY軸（最大5個など）をすべてループでプロット
             for y_axis in cfg["y_axes"]:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
@@ -326,14 +318,12 @@ if st.session_state.datasets:
                     degree = 1 if "1次近似" in chosen_shape else 2
                     x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
                     
-                    # 元データを点でうっすらプロット
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
                         marker=dict(color=color, opacity=0.3, size=6),
                         name=f"{dataset['name']}-{y_axis} (点)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
                     ))
-                    # トレンド線を描画
                     merged_fig.add_trace(go.Scatter(
                         x=x_t, y=y_t, mode="lines",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
@@ -348,8 +338,9 @@ if st.session_state.datasets:
                     elif chosen_shape == "直線のみ（全点結ぶ）": m_mode = "lines"
                     else: m_mode = "lines+markers"
                     
+                    # 【修正箇所】タイポを排除し、現在の y_axis の列データを正確に参照
                     merged_fig.add_trace(go.Scatter(
-                        x=df[cfg["x_axis"]], y=df[y_col if 'y_col' in locals() else y_axis], mode=m_mode,
+                        x=df[cfg["x_axis"]], y=df[y_axis], mode=m_mode,
                         line=line_config_merged, marker=dict(color=color),
                         name=f"{dataset['name']}-{y_axis}",
                         xaxis=target_xaxis, yaxis=target_yaxis
