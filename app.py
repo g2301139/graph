@@ -5,6 +5,7 @@ import plotly.express as px
 import numpy as np
 from io import StringIO
 import re
+from scipy.interpolate import UnivariateSpline
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
