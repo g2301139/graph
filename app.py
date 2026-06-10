@@ -5,6 +5,7 @@ import plotly.express as px
 import numpy as np
 from io import StringIO
 import re
+from scipy.interpolate import UnivariateSpline
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
@@ -19,7 +20,11 @@ if "datasets" not in st.session_state:
 if "editing_idx" not in st.session_state:
     st.session_state.editing_idx = None
 
-# ★【追加】テキストエリアの一時保存用バッファの初期化
+# -----------------------------------------------------------------------------
+# 1. データの入力と管理
+# -----------------------------------------------------------------------------
+st.header("1. データの入力と管理")
+
 default_paste_data = (
     "X軸データ\t売上\t利益\t目標値\tカテゴリー\n"
     "1000000\t10000000\t2\t8\tA\n"
@@ -28,38 +33,15 @@ default_paste_data = (
     "4000000\t20000000\t8\t18\tB\n"
     "5000000\t26000000\t7\t22\tA"
 )
-if "input_buffer" not in st.session_state:
-    st.session_state.input_buffer = default_paste_data
-if "input_name" not in st.session_state:
-    st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
 
-# -----------------------------------------------------------------------------
-# 1. データの入力と管理
-# -----------------------------------------------------------------------------
-st.header("1. データの入力と管理")
-
-# 一時保存を有効にするため、フォームの clear_on_submit は False に変更し手動制御します
-with st.form("add_data_form", clear_on_submit=False):
-    # セッションと連動させて名前を保持
-    dataset_name = st.text_input(
-        "データの名前", 
-        value=st.session_state.input_name,
-        key="form_dataset_name"
-    )
-    
-    # セッションバッファからテキストを読み込み
+with st.form("add_data_form", clear_on_submit=True):
+    dataset_name = st.text_input("データの名前", value=f"データセット {len(st.session_state.datasets) + 1}")
     paste_input = st.text_area(
         "Excelやスプレッドシートからデータをコピーし、下の枠内に貼り付けてください：",
-        value=st.session_state.input_buffer,
-        height=150,
-        key="form_paste_input"
+        value=default_paste_data,
+        height=150
     )
-    
     submit_button = st.form_submit_button("📥 このデータをアプリに追加する")
-
-# 入力があるたびにセッション状態を更新（リロード対策の一時保存）
-st.session_state.input_buffer = paste_input
-st.session_state.input_name = dataset_name
 
 if submit_button and paste_input.strip():
     try:
@@ -82,12 +64,6 @@ if submit_button and paste_input.strip():
             "df": new_df
         })
         st.success(f"「{dataset_name}」を追加しました！")
-        
-        # ★追加成功時のみ、次の入力のためにバッファをクリア（初期化）する
-        st.session_state.input_buffer = default_paste_data
-        st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
-        st.rerun()
-        
     except Exception as e:
         st.error(f"データの読み込みに失敗しました。エラー: {e}")
 
@@ -202,6 +178,7 @@ if st.session_state.datasets:
                 color_idx = 0
                 
                 single_axis_count = len(y_axes)
+                # 軸が増えても1.0を超えないようドメイン幅を確保
                 left_domain_end = max(0.1, 1.0 - (max(0, single_axis_count - 1) * 0.06))
                 
                 fig.update_layout(
@@ -231,6 +208,7 @@ if st.session_state.datasets:
                     if y_loop == 0:
                         axis_args["side"] = "left"
                     else:
+                        # ★修正箇所1: positionが絶対に1.0を超えないよう安全に配置
                         axis_args.update({
                             "side": "right",
                             "overlaying": "y",
@@ -385,6 +363,7 @@ if st.session_state.datasets:
             if loop_count == 0 or integrate_scales:
                 axis_setup["side"] = "left"
             else:
+                # ★修正箇所2: 合体グラフ側も同様にposition上限を安全に計算
                 axis_setup.update(dict(
                     side="right",
                     overlaying="y",
