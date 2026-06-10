@@ -5,7 +5,6 @@ import plotly.express as px
 import numpy as np
 from io import StringIO
 import re
-from scipy.interpolate import UnivariateSpline
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
@@ -20,11 +19,6 @@ if "datasets" not in st.session_state:
 if "editing_idx" not in st.session_state:
     st.session_state.editing_idx = None
 
-# -----------------------------------------------------------------------------
-# 1. データの入力と管理
-# -----------------------------------------------------------------------------
-st.header("1. データの入力と管理")
-
 default_paste_data = (
     "X軸データ\t売上\t利益\t目標値\tカテゴリー\n"
     "1000000\t10000000\t2\t8\tA\n"
@@ -33,15 +27,56 @@ default_paste_data = (
     "4000000\t20000000\t8\t18\tB\n"
     "5000000\t26000000\t7\t22\tA"
 )
+if "input_buffer" not in st.session_state:
+    st.session_state.input_buffer = default_paste_data
+if "input_name" not in st.session_state:
+    st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
 
-with st.form("add_data_form", clear_on_submit=True):
-    dataset_name = st.text_input("データの名前", value=f"データセット {len(st.session_state.datasets) + 1}")
+# トレンド線（近似曲線）を計算するヘルパー関数
+def calculate_trend_line(x_series, y_series, degree=1):
+    try:
+        # 欠損値を除外
+        mask = ~np.isnan(x_series) & ~np.isnan(y_series)
+        x_clean = x_series[mask].astype(float)
+        y_clean = y_series[mask].astype(float)
+        
+        if len(x_clean) < degree + 1:
+            return x_series, y_series # データが足りなければそのまま返す
+            
+        # 多項式フィッティング (degree=1なら直線、2なら2次曲線)
+        z = np.polyfit(x_clean, y_clean, degree)
+        p = np.poly1d(z)
+        
+        # 綺麗に線を引くためにX軸の範囲を細かく分割してYを再計算
+        x_trend = np.linspace(x_clean.min(), x_clean.max(), 100)
+        y_trend = p(x_trend)
+        return x_trend, y_trend
+    except:
+        return x_series, y_series
+
+# -----------------------------------------------------------------------------
+# 1. データの入力と管理
+# -----------------------------------------------------------------------------
+st.header("1. データの入力と管理")
+
+with st.form("add_data_form", clear_on_submit=False):
+    dataset_name = st.text_input(
+        "データの名前", 
+        value=st.session_state.input_name,
+        key="form_dataset_name"
+    )
+    
     paste_input = st.text_area(
         "Excelやスプレッドシートからデータをコピーし、下の枠内に貼り付けてください：",
-        value=default_paste_data,
-        height=150
+        value=st.session_state.input_buffer,
+        height=150,
+        key="form_paste_input"
     )
+    
     submit_button = st.form_submit_button("📥 このデータをアプリに追加する")
+
+st.session_state.input_buffer = paste_input
+st.session_state.input_name = dataset_name
 
 if submit_button and paste_input.strip():
     try:
@@ -64,6 +99,11 @@ if submit_button and paste_input.strip():
             "df": new_df
         })
         st.success(f"「{dataset_name}」を追加しました！")
+        
+        st.session_state.input_buffer = default_paste_data
+        st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
+        st.rerun()
+        
     except Exception as e:
         st.error(f"データの読み込みに失敗しました。エラー: {e}")
 
@@ -155,9 +195,17 @@ if st.session_state.datasets:
                     with t_col:
                         single_y_titles[y_col] = st.text_input(f"軸名 [{y_col}]", value=y_col, key=f"single_title_{idx}_{y_col}")
                     with shape_col:
+                        # ★ トレンド線（近似曲線）の選択肢を追加
                         single_y_shapes[y_col] = st.selectbox(
                             f"グラフの形状",
-                            options=["直線（マーカーあり）", "なめらかな曲線", "点のみ", "直線のみ"],
+                            options=[
+                                "直線（全点結ぶ・マーカーあり）", 
+                                "なめらかな曲線（全点結ぶ）", 
+                                "点（マーカー）のみ", 
+                                "直線のみ（全点結ぶ）",
+                                "📈 トレンド線（直線：1次近似）",
+                                "📈 トレンド線（なめらかな曲線：2次近似）"
+                            ],
                             index=0,
                             key=f"single_shape_{idx}_{y_col}"
                         )
@@ -178,7 +226,6 @@ if st.session_state.datasets:
                 color_idx = 0
                 
                 single_axis_count = len(y_axes)
-                # 軸が増えても1.0を超えないようドメイン幅を確保
                 left_domain_end = max(0.1, 1.0 - (max(0, single_axis_count - 1) * 0.06))
                 
                 fig.update_layout(
@@ -190,6 +237,7 @@ if st.session_state.datasets:
                 
                 for y_loop, y_col in enumerate(y_axes):
                     layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
+                    target_yaxis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
                     
                     axis_args = {
                         "title": single_y_titles.get(y_col, y_col),
@@ -208,7 +256,6 @@ if st.session_state.datasets:
                     if y_loop == 0:
                         axis_args["side"] = "left"
                     else:
-                        # ★修正箇所1: positionが絶対に1.0を超えないよう安全に配置
                         axis_args.update({
                             "side": "right",
                             "overlaying": "y",
@@ -218,34 +265,55 @@ if st.session_state.datasets:
                     
                     fig.layout[layout_key] = axis_args
                     
-                    chosen_shape = single_y_shapes.get(y_col, "直線（マーカーあり）")
-                    line_config = dict()
-                    
-                    if chosen_shape == "直線（マーカーあり）":
-                        plot_mode = "lines+markers"
-                    elif chosen_shape == "なめらかな曲線":
-                        plot_mode = "lines+markers"
-                        line_config["shape"] = "spline"
-                    elif chosen_shape == "点のみ":
-                        plot_mode = "markers"
-                    elif chosen_shape == "直線のみ":
-                        plot_mode = "lines"
-                    else:
-                        plot_mode = "lines+markers"
-                    
+                    chosen_shape = single_y_shapes.get(y_col, "直線（全点結ぶ・マーカーあり）")
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
-                    line_config["color"] = color
                     
-                    fig.add_trace(go.Scatter(
-                        x=df[x_axis],
-                        y=df[y_col],
-                        mode=plot_mode,
-                        line=line_config,
-                        marker=dict(color=color),
-                        name=y_col,
-                        yaxis="y" if y_loop == 0 else f"y{y_loop + 1}"
-                    ))
+                    # トレンド線の描画分岐
+                    if "トレンド線" in chosen_shape:
+                        degree = 1 if "1次近似" in chosen_shape else 2
+                        x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
+                        
+                        # 1. 元のデータをうっすらした点（マーカー）として描画
+                        fig.add_trace(go.Scatter(
+                            x=df[x_axis], y=df[y_col],
+                            mode="markers",
+                            marker=dict(color=color, opacity=0.4, size=7),
+                            name=f"{y_col} (元データ)",
+                            yaxis=target_yaxis_id,
+                            showlegend=False
+                        ))
+                        # 2. その上に綺麗な近似曲線（トレンド線）を引く
+                        fig.add_trace(go.Scatter(
+                            x=x_t, y=y_t,
+                            mode="lines",
+                            line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"),
+                            name=f"{y_col} (トレンド線)",
+                            yaxis=target_yaxis_id
+                        ))
+                    else:
+                        # 通常の線描画
+                        line_config = dict(color=color)
+                        if chosen_shape == "直線（全点結ぶ・マーカーあり）":
+                            plot_mode = "lines+markers"
+                        elif chosen_shape == "なめらかな曲線（全点結ぶ）":
+                            plot_mode = "lines+markers"
+                            line_config["shape"] = "spline"
+                        elif chosen_shape == "点（マーカー）のみ":
+                            plot_mode = "markers"
+                        elif chosen_shape == "直線のみ（全点結ぶ）":
+                            plot_mode = "lines"
+                        else:
+                            plot_mode = "lines+markers"
+                            
+                        fig.add_trace(go.Scatter(
+                            x=df[x_axis], y=df[y_col],
+                            mode=plot_mode,
+                            line=line_config,
+                            marker=dict(color=color),
+                            name=y_col,
+                            yaxis=target_yaxis_id
+                        ))
                     
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
@@ -255,64 +323,67 @@ if st.session_state.datasets:
     st.markdown("---")
     st.header("3. 🔗 グラフの合体（重ね合わせ表示）")
     
+    st.subheader("① 合体するデータと縦軸グループの選択")
+    st.write("同じ「軸グループ」に設定したデータ同士は、目盛り（スケール）が自動で1つに統合されます。")
+    
     selected_indices = []
+    dataset_axis_mapping = {}
+    
     cb_cols = st.columns(len(st.session_state.datasets))
     for idx, dataset in enumerate(st.session_state.datasets):
         with cb_cols[idx]:
-            if st.checkbox(f"合体する: {dataset['name']}", value=True, key=f"merge_cb_{idx}"):
+            is_checked = st.checkbox(f"合体する: {dataset['name']}", value=True, key=f"merge_cb_{idx}")
+            if is_checked:
                 selected_indices.append(idx)
+                chosen_axis = st.selectbox(
+                    f"└ 割り当てる縦軸",
+                    options=["軸 1 (左側)", "軸 2 (右側-1)", "軸 3 (右側-2)", "軸 4 (右側-3)"],
+                    index=0 if idx == 0 else min(idx, 1),
+                    key=f"axis_grp_{idx}"
+                )
+                axis_num = int(re.search(r'\d+', chosen_axis).group())
+                dataset_axis_mapping[idx] = axis_num
 
     if len(selected_indices) < 1:
         st.warning("合体するデータを1つ以上選択してください。")
     else:
+        active_axes = sorted(list(set(dataset_axis_mapping.values())))
+        
         st.subheader("② 目盛り（スケール）と範囲・軸名の設定")
         
-        setting_col1, setting_col2 = st.columns(2)
-        with setting_col1:
-            integrate_scales = st.checkbox("すべての縦軸（Y軸）の目盛りを1つに統合する", value=False)
-        with setting_col2:
-            custom_x_range_enabled = st.checkbox("横軸（X軸）の表示範囲を手動で設定する", value=False)
-            x_min_val, x_max_val = 0.0, 5000000.0
-            if custom_x_range_enabled:
-                range_col1, range_col2 = st.columns(2)
-                with range_col1: x_min_val = st.number_input("横軸 最小値", value=0.0, key="x_min")
-                with range_col2: x_max_val = st.number_input("横軸 最大値", value=5000000.0, key="x_max")
+        custom_x_range_enabled = st.checkbox("横軸（X軸）の表示範囲を手動で設定する", value=False)
+        x_min_val, x_max_val = 0.0, 5000000.0
+        if custom_x_range_enabled:
+            range_col1, range_col2 = st.columns(2)
+            with range_col1: x_min_val = st.number_input("横軸 最小値", value=0.0, key="x_min")
+            with range_col2: x_max_val = st.number_input("横軸 最大値", value=5000000.0, key="x_max")
 
-        st.markdown("✏️ **各縦軸（Y軸）のラベル名と個別範囲設定（最大・最小）**")
+        st.markdown("✏️ **選択した軸グループごとのラベル名・個別範囲設定**")
         
         custom_axis_titles = {}
         y_min_inputs = {}
         y_max_inputs = {}
         
-        axis_count = 0
-        for loop_count, idx in enumerate(selected_indices):
-            dataset = st.session_state.datasets[idx]
-            cfg = configs.get(idx)
-            if not cfg or not cfg["y_axes"]: continue
+        for axis_num in active_axes:
+            if axis_num == 1:
+                st.markdown("##### 🔹 軸 1（メイン・左側）の設定")
+            else:
+                st.markdown(f"##### 🔸 軸 {axis_num}（サブ・右側）の設定")
+                
+            t_col, min_col, max_col = st.columns([2, 1, 1])
+            associated_datasets = [st.session_state.datasets[i]["name"] for i, ax in dataset_axis_mapping.items() if ax == axis_num]
+            default_title = f"軸 {axis_num} ({', '.join(associated_datasets)})"
             
-            axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
-            
-            if loop_count == 0:
-                st.markdown(f"##### 🔹 第1縦軸（左側）: {dataset['name']} 用")
-                t_col, min_col, max_col = st.columns([2, 1, 1])
-                with t_col:
-                    custom_axis_titles[axis_key] = st.text_input("軸の表示名", value="共通縦軸 (Y)" if integrate_scales else cfg["custom_y_label"], key=f"title_{axis_key}")
-                with min_col:
-                    y_min_inputs[axis_key] = st.text_input("最小値（自動なら空欄）", value="", key=f"min_in_{axis_key}")
-                with max_col:
-                    y_max_inputs[axis_key] = st.text_input("最大値（自動なら空欄）", value="", key=f"max_in_{axis_key}")
-                axis_count += 1
-            elif not integrate_scales:
-                st.markdown(f"##### 🔸 第{axis_count + 1}縦軸（右側並び）: {dataset['name']} 用")
-                t_col, min_col, max_col = st.columns([2, 1, 1])
-                with t_col:
-                    custom_axis_titles[axis_key] = st.text_input("軸の表示名", value=cfg["custom_y_label"], key=f"title_{axis_key}")
-                with min_col:
-                    y_min_inputs[axis_key] = st.text_input("最小値（自動なら空欄）", value="", key=f"min_in_{axis_key}")
-                with max_col:
-                    y_max_inputs[axis_key] = st.text_input("最大値（自動なら空欄）", value="", key=f"max_in_{axis_key}")
-                axis_count += 1
+            with t_col:
+                custom_axis_titles[axis_num] = st.text_input(f"軸 {axis_num} の表示名", value=default_title, key=f"title_axis_grp_{axis_num}")
+            with min_col:
+                y_min_inputs[axis_num] = st.text_input("最小値（空欄自動）", value="", key=f"min_axis_grp_{axis_num}")
+            with max_col:
+                y_max_inputs[axis_num] = st.text_input("最大値（空欄自動）", value="", key=f"max_axis_grp_{axis_num}")
 
+        # -----------------------------------------------------------------------------
+        # 合体グラフ描画ロジック
+        # -----------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
@@ -320,7 +391,8 @@ if st.session_state.datasets:
         first_cfg = configs.get(selected_indices[0])
         merged_x_title = st.text_input("合体グラフの横軸名", value=first_cfg["custom_x_label"] if first_cfg else "X軸", key="m_x_label")
         
-        right_bound = max(0.1, 1.0 - (max(0, axis_count - 1) * 0.06))
+        right_axes_count = len([a for a in active_axes if a > 1])
+        right_bound = max(0.1, 1.0 - (right_axes_count * 0.06))
         
         xaxis_setup = dict(title=merged_x_title, side="bottom", tickformat="f", domain=[0.0, right_bound])
         if custom_x_range_enabled:
@@ -329,92 +401,110 @@ if st.session_state.datasets:
             
         merged_fig.update_layout(
             hovermode="closest",
-            margin=dict(l=60, r=20 + (max(0, axis_count - 1) * 60), t=50, b=60),
+            margin=dict(l=60, r=20 + (right_axes_count * 60), t=50, b=60),
             xaxis=xaxis_setup
         )
 
-        right_axis_idx = 0
-        for loop_count, idx in enumerate(selected_indices):
-            cfg = configs.get(idx)
-            if not cfg or not cfg["y_axes"]: continue
-
-            if loop_count == 0 or integrate_scales:
+        plotly_axis_id_map = {}
+        right_drawn_count = 0
+        
+        for axis_num in active_axes:
+            if axis_num == 1:
                 layout_key = "yaxis"
+                plotly_axis_id_map[axis_num] = "y"
             else:
-                right_axis_idx += 1
-                layout_key = f"yaxis{right_axis_idx + 1}"
-
-            axis_key = "y" if (loop_count == 0 or integrate_scales) else f"y_{idx}"
+                right_drawn_count += 1
+                layout_key = f"yaxis{right_drawn_count + 1}"
+                plotly_axis_id_map[axis_num] = f"y{right_drawn_count + 1}"
 
             axis_setup = dict(
-                title=custom_axis_titles.get(axis_key, "値"),
+                title=custom_axis_titles.get(axis_num, f"軸 {axis_num}"),
                 tickformat="f"
             )
             
             try:
-                mn = y_min_inputs.get(axis_key, "").strip()
-                mx = y_max_inputs.get(axis_key, "").strip()
+                mn = y_min_inputs.get(axis_num, "").strip()
+                mx = y_max_inputs.get(axis_num, "").strip()
                 if mn != "" and mx != "":
                     axis_setup["range"] = [float(mn), float(mx)]
                     axis_setup["autorange"] = False
             except ValueError:
                 pass
 
-            if loop_count == 0 or integrate_scales:
+            if axis_num == 1:
                 axis_setup["side"] = "left"
             else:
-                # ★修正箇所2: 合体グラフ側も同様にposition上限を安全に計算
                 axis_setup.update(dict(
                     side="right",
                     overlaying="y",
                     anchor="free",
-                    position=min(1.0, 1.0 - (max(0, axis_count - 1 - right_axis_idx) * 0.04))
+                    position=min(1.0, 1.0 - (max(0, right_axes_count - right_drawn_count) * 0.04))
                 ))
             
             merged_fig.layout[layout_key] = axis_setup
 
-        right_axis_idx = 0
-        for loop_count, idx in enumerate(selected_indices):
+        # 各データセットの系列を合体グラフに追加
+        for idx in selected_indices:
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            if loop_count == 0 or integrate_scales:
-                axis_id = "y"
-            else:
-                right_axis_idx += 1
-                axis_id = f"y{right_axis_idx + 1}"
+            assigned_grp = dataset_axis_mapping[idx]
+            target_plotly_yaxis = plotly_axis_id_map[assigned_grp]
 
             for y_axis in cfg["y_axes"]:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
                 
                 saved_shapes = cfg.get("shapes", {})
-                chosen_shape = saved_shapes.get(y_axis, "直線（マーカーあり）")
-                line_config_merged = dict(color=color)
+                chosen_shape = saved_shapes.get(y_axis, "直線（全点結ぶ・マーカーあり）")
                 
-                if chosen_shape == "直線（マーカーあり）":
-                    m_mode = "lines+markers"
-                elif chosen_shape == "なめらかな曲線":
-                    m_mode = "lines+markers"
-                    line_config_merged["shape"] = "spline"
-                elif chosen_shape == "点のみ":
-                    m_mode = "markers"
-                elif chosen_shape == "直線のみ":
-                    m_mode = "lines"
+                # 合体グラフ側でもトレンド線判定を行う
+                if "トレンド線" in chosen_shape:
+                    degree = 1 if "1次近似" in chosen_shape else 2
+                    x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
+                    
+                    # 点を描画
+                    merged_fig.add_trace(go.Scatter(
+                        x=df[cfg["x_axis"]], y=df[y_axis],
+                        mode="markers",
+                        marker=dict(color=color, opacity=0.3, size=6),
+                        name=f"{dataset['name']}-{y_axis} (点)",
+                        yaxis=target_plotly_yaxis,
+                        showlegend=False
+                    ))
+                    # トレンド線を描画
+                    merged_fig.add_trace(go.Scatter(
+                        x=x_t, y=y_t,
+                        mode="lines",
+                        line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
+                        name=f"{dataset['name']}-{y_axis} (トレンド)",
+                        yaxis=target_plotly_yaxis
+                    ))
                 else:
-                    m_mode = "lines+markers"
-                
-                merged_fig.add_trace(go.Scatter(
-                    x=df[cfg["x_axis"]],
-                    y=df[y_axis],
-                    mode=m_mode,
-                    line=line_config_merged,
-                    marker=dict(color=color),
-                    name=f"{dataset['name']}-{y_axis}",
-                    yaxis=axis_id
-                ))
+                    line_config_merged = dict(color=color)
+                    if chosen_shape == "直線（全点結ぶ・マーカーあり）":
+                        m_mode = "lines+markers"
+                    elif chosen_shape == "なめらかな曲線（全点結ぶ）":
+                        m_mode = "lines+markers"
+                        line_config_merged["shape"] = "spline"
+                    elif chosen_shape == "点（マーカー）のみ":
+                        m_mode = "markers"
+                    elif chosen_shape == "直線のみ（全点結ぶ）":
+                        m_mode = "lines"
+                    else:
+                        m_mode = "lines+markers"
+                    
+                    merged_fig.add_trace(go.Scatter(
+                        x=df[cfg["x_axis"]],
+                        y=df[y_axis],
+                        mode=m_mode,
+                        line=line_config_merged,
+                        marker=dict(color=color),
+                        name=f"{dataset['name']}-{y_axis}",
+                        yaxis=target_plotly_yaxis
+                    ))
 
         st.subheader("📉 合体したグラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=600, key="final_merged_chart")
