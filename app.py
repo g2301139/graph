@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (最大10軸拡張版)")
-st.write("合体前も合体後も、最大10個の独立した縦軸・横軸を自由に割り当て・統合できるようになりました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (軸カスタム完全版)")
+st.write("合体後に「どのデータの何」が統合されているかを見える化し、合体後の各軸名や最小値・最大値も自由に編集できるようになりました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -122,7 +122,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと） - ★最大10軸の個別割り当てに対応
+# 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -130,7 +130,6 @@ if st.session_state.datasets:
     st.header("2. グラフの設定（データごと）")
     tabs = st.tabs([d["name"] for d in st.session_state.datasets])
     
-    # 選択肢を最大10軸（左側 + 右側1〜9）に拡張
     pos_options = ["左側"] + [f"右側-{i}" for i in range(1, 10)]
     
     for idx, dataset in enumerate(st.session_state.datasets):
@@ -182,6 +181,7 @@ if st.session_state.datasets:
                     with max_col: single_y_maxs[y_col] = st.text_input(f"最大値（自動は空欄）", value="", key=f"single_max_{idx}_{y_col}")
 
             configs[idx] = {
+                "name": dataset["name"],
                 "x_axis": x_axis, "y_axes": y_axes, "color_axis": color_axis,
                 "custom_x_label": custom_x_label, "custom_y_label": custom_y_label,
                 "shapes": single_y_shapes, "mins": single_y_mins, "maxs": single_y_maxs,
@@ -193,11 +193,9 @@ if st.session_state.datasets:
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
                 
-                # 有効な軸ポジションの抽出
                 chosen_positions = sorted(list(set(single_y_positions.values())), key=lambda x: 0 if x=="左側" else int(x.split('-')[1]))
                 right_positions = [p for p in chosen_positions if p != "左側"]
                 
-                # 軸が増えても綺麗に収まるよう、グラフ表示幅（domain）を動的計算
                 left_domain_end = max(0.15, 1.0 - (len(right_positions) * 0.05))
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
@@ -260,19 +258,18 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション (★最大10個のグループ統合システム)
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
-    st.header("3. 🔗 グラフの合体（指定した縦軸・横軸を統合：最大10グループ）")
-    st.write("合体させたいデータを選び、それぞれ横軸・縦軸を1〜10のどのグループに統合するか選択してください。")
+    st.header("3. 🔗 グラフの合体設定と統合状態の見える化")
+    st.write("データを選び、統合するグループ番号（1〜10）を指定してください。")
     
     selected_indices = []
     mapping_xaxis_grp = {}
     mapping_yaxis_grp = {}
     
-    # 選択肢を1〜10に拡大
     x_grp_options = [f"横軸 {i}" for i in range(1, 11)]
-    y_grp_options = [f"縦軸 1 (左側優先)"] + [f"縦軸 {i} (右側分散-{i-1})" for i in range(2, 11)]
+    y_grp_options = [f"縦軸 {i}" for i in range(1, 11)]
     
     cb_cols = st.columns(len(st.session_state.datasets))
     for idx, dataset in enumerate(st.session_state.datasets):
@@ -282,32 +279,93 @@ if st.session_state.datasets:
                 selected_indices.append(idx)
                 
                 chosen_x = st.selectbox(
-                    f"└ 🔗 横軸グループ(1~10)",
-                    options=x_grp_options,
-                    index=0,
-                    key=f"user_x_grp_{idx}"
+                    f"└ 横軸グループ(X)", options=x_grp_options, index=0, key=f"user_x_grp_{idx}"
                 )
                 mapping_xaxis_grp[idx] = int(re.search(r'\d+', chosen_x).group())
                 
                 chosen_y = st.selectbox(
-                    f"└ 🔗 縦軸グループ(1~10)",
-                    options=y_grp_options,
-                    index=0 if idx == 0 else min(idx, len(y_grp_options)-1),
-                    key=f"user_y_grp_{idx}"
+                    f"└ 縦軸グループ(Y)", options=y_grp_options, index=0 if idx == 0 else min(idx, len(y_grp_options)-1), key=f"user_y_grp_{idx}"
                 )
                 mapping_yaxis_grp[idx] = int(re.search(r'\d+', chosen_y).group())
 
-    if len(selected_indices) < 1:
-        st.warning("合体するデータを1つ以上選択してください。")
-    else:
+    if len(selected_indices) >= 1:
+        active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
+        active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
+        
+        # -------------------------------------------------------------------------
+        # ★ 統合状態の見える化表示（「データなんの何とデータなんの何を統合」）
+        # -------------------------------------------------------------------------
+        st.info("💡 **現在の軸グループ統合ステータス（同室一覧）**")
+        
+        status_cols = st.columns(2)
+        with status_cols[0]:
+            st.markdown("**【横軸(X)の統合詳細】**")
+            for x_g in active_x_grps:
+                joined_members = []
+                for idx in selected_indices:
+                    if mapping_xaxis_grp[idx] == x_g:
+                        joined_members.append(f"「{st.session_state.datasets[idx]['name']}」の [{configs[idx]['x_axis']}]")
+                st.markdown(f"* 🔗 **横軸 {x_g}**: " + " ＋ ".join(joined_members) + " を統合中")
+                
+        with status_cols[1]:
+            st.markdown("**【縦軸(Y)の統合詳細】**")
+            for y_g in active_y_grps:
+                joined_members = []
+                for idx in selected_indices:
+                    if mapping_yaxis_grp[idx] == y_g:
+                        cfg = configs[idx]
+                        for y_col in cfg["y_axes"]:
+                            joined_members.append(f"「{st.session_state.datasets[idx]['name']}」の [{y_col}]")
+                if joined_members:
+                    st.markdown(f"* 🔗 **縦軸 {y_g}**: " + " ＋ ".join(joined_members) + " を統合中")
+
+        # -------------------------------------------------------------------------
+        # ★ 合体グラフ側の軸名・最小値・最大値のカスタム編集フォーム
+        # -------------------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("✏️ 合体グラフ専用：統合軸の詳細編集（軸名・範囲指定）")
+        st.write("統合されたそれぞれの軸グループごとに、名前や表示範囲（最小・最大）を個別に上書きカスタムできます。")
+        
+        merged_x_titles = {}
+        merged_x_mins = {}
+        merged_x_maxs = {}
+        merged_y_titles = {}
+        merged_y_mins = {}
+        merged_y_maxs = {}
+        
+        # 横軸カスタム入力
+        st.markdown("##### 📐 横軸(X)のカスタムエリア")
+        x_input_cols = st.columns(max(1, len(active_x_grps)))
+        for l_idx, x_grp_num in enumerate(active_x_grps):
+            with x_input_cols[l_idx]:
+                rep_idx = [i for i, g in mapping_xaxis_grp.items() if g == x_grp_num][0]
+                default_label = f"横軸G-{x_grp_num} ({configs[rep_idx]['custom_x_label']})"
+                
+                merged_x_titles[x_grp_num] = st.text_input(f"横軸 {x_grp_num} の表示名", value=default_label, key=f"m_title_x_{x_grp_num}")
+                x_min_col, x_max_col = st.columns(2)
+                with x_min_col: merged_x_mins[x_grp_num] = st.text_input(f"最小値", value="", key=f"m_min_x_{x_grp_num}")
+                with x_max_col: merged_x_maxs[x_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_x_{x_grp_num}")
+
+        # 縦軸カスタム入力
+        st.markdown("##### 📐 縦軸(Y)のカスタムエリア")
+        y_input_cols = st.columns(max(1, len(active_y_grps)))
+        for l_idx, y_grp_num in enumerate(active_y_grps):
+            with y_input_cols[l_idx]:
+                rep_idx = [i for i, g in mapping_yaxis_grp.items() if g == y_grp_num][0]
+                default_label = f"縦軸G-{y_grp_num} ({configs[rep_idx]['custom_y_label']})"
+                
+                merged_y_titles[y_grp_num] = st.text_input(f"縦軸 {y_grp_num} の表示名", value=default_label, key=f"m_title_y_{y_grp_num}")
+                y_min_col, y_max_col = st.columns(2)
+                with y_min_col: merged_y_mins[y_grp_num] = st.text_input(f"最小値", value="", key=f"m_min_y_{y_grp_num}")
+                with x_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
+
+        # -------------------------------------------------------------------------
+        # グラフ合成処理
+        # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
-        active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
-        
-        # 10軸になってもはみ出さないよう余白と幅調整ルールをタイトに最適化
         right_y_count = len([a for a in active_y_grps if a > 1])
         left_xaxis_domain = 0.055 * len([a for a in active_y_grps if a == 1])
         left_xaxis_domain = max(0.12, left_xaxis_domain)
@@ -318,16 +376,24 @@ if st.session_state.datasets:
             margin=dict(l=20 + (len(active_y_grps)*35), r=20 + (right_y_count*50), t=60, b=40 + (len(active_x_grps)*35)),
         )
 
-        # 【合体後】最大10組の横軸グループ設定
+        # 横軸レイアウトの構築
         plotly_x_id_map = {}
         for loop_idx, x_grp_num in enumerate(active_x_grps):
             layout_key = "xaxis" if loop_idx == 0 else f"xaxis{loop_idx + 1}"
             plotly_x_id_map[x_grp_num] = "x" if loop_idx == 0 else f"x{loop_idx + 1}"
             
-            rep_idx = [i for i, g in mapping_xaxis_grp.items() if g == x_grp_num][0]
-            rep_label = configs[rep_idx]["custom_x_label"]
-            x_setup = dict(title=f"横軸G-{x_grp_num} ({rep_label})", tickformat="f")
+            x_title_user = merged_x_titles.get(x_grp_num, f"横軸 {x_grp_num}")
+            x_setup = dict(title=x_title_user, tickformat="f")
             
+            # 手動範囲の適用
+            try:
+                mn = merged_x_mins.get(x_grp_num, "").strip()
+                mx = merged_x_maxs.get(x_grp_num, "").strip()
+                if mn != "" and mx != "":
+                    x_setup["range"] = [float(mn), float(mx)]
+                    x_setup["autorange"] = False
+            except ValueError: pass
+
             if loop_idx == 0:
                 x_setup.update(dict(side="bottom", domain=[left_xaxis_domain, right_xaxis_domain]))
             else:
@@ -339,7 +405,7 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 【合体後】最大10組の縦軸グループ設定
+        # 縦軸レイアウトの構築
         plotly_y_id_map = {}
         right_drawn_count = 0
         for loop_idx, y_grp_num in enumerate(active_y_grps):
@@ -351,10 +417,18 @@ if st.session_state.datasets:
                 layout_key = f"yaxis{right_drawn_count + 1}"
                 plotly_y_id_map[y_grp_num] = f"y{right_drawn_count + 1}"
             
-            rep_idx = [i for i, g in mapping_yaxis_grp.items() if g == y_grp_num][0]
-            rep_label = configs[rep_idx]["custom_y_label"]
-            y_setup = dict(title=f"縦軸G-{y_grp_num} ({rep_label})", tickformat="f")
+            y_title_user = merged_y_titles.get(y_grp_num, f"縦軸 {y_grp_num}")
+            y_setup = dict(title=y_title_user, tickformat="f")
             
+            # 手動範囲の適用
+            try:
+                mn = merged_y_mins.get(y_grp_num, "").strip()
+                mx = merged_y_maxs.get(y_grp_num, "").strip()
+                if mn != "" and mx != "":
+                    y_setup["range"] = [float(mn), float(mx)]
+                    y_setup["autorange"] = False
+            except ValueError: pass
+
             if y_grp_num == 1:
                 y_setup.update(dict(side="left", anchor="x"))
             else:
@@ -364,7 +438,7 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = y_setup
 
-        # 系列の最終プロット
+        # 系列のプロット
         for idx in selected_indices:
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
@@ -413,7 +487,7 @@ if st.session_state.datasets:
                         xaxis=target_xaxis, yaxis=target_yaxis
                     ))
 
-        st.subheader("📉 最大10グループ拡張・条件指定合体グラフ")
+        st.subheader("📉 完全編集仕様・条件指定合体グラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=700, key="final_flexible_max10_merged_chart")
 else:
     st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
