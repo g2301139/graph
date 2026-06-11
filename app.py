@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (軸文字重なり修正版)")
-st.write("左側に増えていく縦軸の文字が重ならないよう、軸同士の間隔と左側の余白を最適化しました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (軸文字重なり・バグ完全修正版)")
+st.write("左側に並ぶ縦軸の文字が重ならないよう間隔を最適化し、プログラムのエラーを完全に修正しました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -180,8 +180,7 @@ if st.session_state.datasets:
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
                 
-                # 軸間の間隔（ドメイン比率）と、文字の重なり防止用ピクセルオフセット
-                offset_dist = 0.075
+                offset_dist = 0.085  # 重なりを防ぐため軸ごとのドメイン幅を少し広めに確保
                 total_axes = len(y_axes)
                 xaxis_start = max(0.0, offset_dist * (total_axes - 1))
                 
@@ -189,8 +188,7 @@ if st.session_state.datasets:
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
                     xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[xaxis_start, 1.0]),
-                    # 左側の余白を軸の数（文字幅含む）に応じて自動拡張
-                    margin=dict(l=60 + (total_axes * 55), r=40, t=50, b=60)
+                    margin=dict(l=70 + (total_axes * 60), r=40, t=50, b=60)
                 )
                 
                 for y_loop, y_col in enumerate(y_axes):
@@ -198,7 +196,7 @@ if st.session_state.datasets:
                     target_yaxis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
                     
                     axis_title = single_y_titles.get(y_col, y_col)
-                    axis_args = {"title": axis_title, "tickformat": "f", "side": "left"}
+                    axis_args = {"title": {"text": axis_title, "standoff": 15}, "tickformat": "f", "side": "left"}
                     
                     mn = single_y_mins.get(y_col, "").strip()
                     mx = single_y_maxs.get(y_col, "").strip()
@@ -210,8 +208,7 @@ if st.session_state.datasets:
                         axis_args.update({
                             "overlaying": "y", 
                             "anchor": "free",
-                            "position": max(0.0, xaxis_start - (y_loop * offset_dist)),
-                            "offset": 15 * y_loop # 物理的に文字をさらに外側へずらして重なりを防御
+                            "position": max(0.0, xaxis_start - (y_loop * offset_dist))
                         })
                     fig.layout[layout_key] = axis_args
 
@@ -346,25 +343,23 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # 合体グラフの描画レイアウト（重なりを徹底ガード）
+        # 合体グラフの描画レイアウト（重なり・構文バグ完全修正）
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        offset_distance = 0.075 # 軸が増えるごとの表示座標のズレ幅
+        offset_distance = 0.085  # 軸間の間隔を広めにとる
         total_left_y_axes = len(active_y_grps)
         total_bottom_x_axes = len(active_x_grps)
         
-        # 軸数に合わせて本グラフの描画領域のスタート地点を動的に押し上げる
         xaxis_domain_start = max(0.0, offset_distance * (total_left_y_axes - 1))
         yaxis_domain_start = max(0.0, offset_distance * (total_bottom_x_axes - 1))
         
         merged_fig.update_layout(
             hovermode="closest",
-            # ★文字数が多くても画面左端で見切れないよう、マージン(l)を大きく拡張
             margin=dict(
-                l=70 + (total_left_y_axes * 55), 
+                l=70 + (total_left_y_axes * 60), 
                 r=40, 
                 t=60, 
                 b=60 + (total_bottom_x_axes * 35)
@@ -397,14 +392,15 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 2. 縦軸(Y) 【すべて左側配置 ＋ 重なり防止offset調整】
+        # 2. 縦軸(Y) 【すべて左側配置 ＋ 構文バグ修正・standoffによる文字被り防止】
         plotly_y_id_map = {}
         for loop_idx, y_grp_num in enumerate(active_y_grps):
             layout_key = "yaxis" if loop_idx == 0 else f"yaxis{loop_idx + 1}"
             plotly_y_id_map[y_grp_num] = "y" if loop_idx == 0 else f"y{loop_idx + 1}"
             
             y_title_user = merged_y_titles.get(y_grp_num, f"縦軸 {y_grp_num}")
-            y_setup = dict(title=y_title_user, tickformat="f", side="left")
+            # 文字が他の軸とぶつからないようタイトルにしっかり余裕（standoff）を持たせる
+            y_setup = dict(title={"text": y_title_user, "standoff": 15}, tickformat="f", side="left")
             
             try:
                 mn = merged_y_mins.get(y_grp_num, "").strip()
@@ -417,11 +413,9 @@ if st.session_state.datasets:
             if loop_idx == 0:
                 y_setup.update(dict(domain=[yaxis_domain_start, 1.0]))
             else:
-                # 2個目以降の軸に対して、左に座標をずらしつつ、文字用の追加スペース(offset)を付与
                 y_setup.update(dict(
                     overlaying="y", anchor="free",
-                    position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance)),
-                    "offset": 15 * loop_idx # これで軸のタイトル同士の衝突を防ぎます
+                    position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance))
                 ))
             merged_fig.layout[layout_key] = y_setup
 
