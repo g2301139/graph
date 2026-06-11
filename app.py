@@ -1,15 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
+import px = plotly.express as px
 import numpy as np
 from io import StringIO
 import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (左・下軸集中配置版)")
-st.write("合体後に増えた軸は、縦軸ならすべて「左側」へ、横軸ならすべて「下側」へ順番に並ぶようにレイアウトを最適化しました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (完全左・下軸統一版)")
+st.write("個別グラフ・合体グラフのすべてにおいて、縦軸は「左側」、横軸は「下側」に完全統一し、すべての軸名を個別に編集できるようにしました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -78,7 +78,7 @@ if submit_button and paste_input.strip():
             new_df = pd.read_csv(StringIO(final_input), sep=r'\s+', engine='python')
         
         st.session_state.datasets.append({"name": dataset_name, "df": new_df})
-        st.success(f"「{dataset_name}」を追加しました！")
+        st.success(f"「{dataset_name}"] を追加しました！")
         st.session_state.input_buffer = default_paste_data
         st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
         st.rerun()
@@ -122,15 +122,13 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）
+# 2. グラフの設定（データごと） - 完全左側配置化
 # -----------------------------------------------------------------------------
 configs = {}
 
 if st.session_state.datasets:
     st.header("2. グラフの設定（データごと）")
     tabs = st.tabs([d["name"] for d in st.session_state.datasets])
-    
-    pos_options = ["左側"] + [f"右側-{i}" for i in range(1, 10)]
     
     for idx, dataset in enumerate(st.session_state.datasets):
         with tabs[idx]:
@@ -146,96 +144,74 @@ if st.session_state.datasets:
                 y_axes = st.multiselect("Y軸データ列を選択", options=columns, default=default_y, key=f"y_{idx}")
             with col3: color_axis = st.selectbox("色分け列（オプション）", options=["なし"] + columns, index=0, key=f"color_{idx}")
 
-            label_col1, label_col2 = st.columns(2)
-            with label_col1: custom_x_label = st.text_input("横軸の表示名", value=x_axis, key=f"label_x_{idx}")
-            with label_col2:
-                default_y_label = ", ".join(y_axes) if y_axes else "値"
-                custom_y_label = st.text_input("全体の縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
+            custom_x_label = st.text_input("横軸の表示名", value=x_axis, key=f"label_x_{idx}")
 
-            st.markdown("✏️ **個別グラフの各縦軸詳細設定（形状・軸の統合位置）**")
+            st.markdown("✏️ **各縦軸の詳細設定（軸の名前・最小・最大値を個別に編集できます）**")
             single_y_titles = {}
             single_y_mins = {}
             single_y_maxs = {}
             single_y_shapes = {}
-            single_y_positions = {}
             
             if y_axes:
                 for y_loop, y_col in enumerate(y_axes):
                     st.markdown(f"##### 🔹 列名: 「{y_col}」 の設定")
-                    pos_col, shape_col, min_col, max_col = st.columns([1.5, 2, 1, 1])
+                    title_col, shape_col, min_col, max_col = st.columns([2, 2, 1, 1])
                     
-                    with pos_col:
-                        single_y_positions[y_col] = st.selectbox(
-                            f"軸の割り当て位置",
-                            options=pos_options,
-                            index=0 if y_loop == 0 else min(y_loop, len(pos_options)-1),
-                            key=f"single_pos_{idx}_{y_col}"
-                        )
+                    with title_col:
+                        single_y_titles[y_col] = st.text_input(f"軸の表示名", value=y_col, key=f"single_title_{idx}_{y_col}")
                     with shape_col:
                         single_y_shapes[y_col] = st.selectbox(
                             f"グラフの形状",
                             options=["直線（全点結ぶ・マーカーあり）", "なめらかな曲線（全点結ぶ）", "点（マーカー）のみ", "直線のみ（全点結ぶ）", "📈 トレンド線（直線：1次近似）", "📈 トレンド線（なめらかな曲線：2次近似）"],
                             index=0, key=f"single_shape_{idx}_{y_col}"
                         )
-                    with min_col: single_y_mins[y_col] = st.text_input(f"最小値（自動は空欄）", value="", key=f"single_min_{idx}_{y_col}")
-                    with max_col: single_y_maxs[y_col] = st.text_input(f"最大値（自動は空欄）", value="", key=f"single_max_{idx}_{y_col}")
+                    with min_col: single_y_mins[y_col] = st.text_input(f"最小値", value="", key=f"single_min_{idx}_{y_col}")
+                    with max_col: single_y_maxs[y_col] = st.text_input(f"最大値", value="", key=f"single_max_{idx}_{y_col}")
 
             configs[idx] = {
                 "name": dataset["name"],
                 "x_axis": x_axis, "y_axes": y_axes, "color_axis": color_axis,
-                "custom_x_label": custom_x_label, "custom_y_label": custom_y_label,
-                "shapes": single_y_shapes, "mins": single_y_mins, "maxs": single_y_maxs,
-                "positions": single_y_positions
+                "custom_x_label": custom_x_label,
+                "titles": single_y_titles, "shapes": single_y_shapes, "mins": single_y_mins, "maxs": single_y_maxs
             }
 
+            # 個別グラフの描写（すべて左側に並べる）
             if y_axes:
                 fig = go.Figure()
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
                 
-                chosen_positions = sorted(list(set(single_y_positions.values())), key=lambda x: 0 if x=="左側" else int(x.split('-')[1]))
-                right_positions = [p for p in chosen_positions if p != "左側"]
+                offset_dist = 0.065
+                total_axes = len(y_axes)
+                xaxis_start = max(0.0, offset_dist * (total_axes - 1))
                 
-                left_domain_end = max(0.15, 1.0 - (len(right_positions) * 0.05))
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
-                    xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0.0, left_domain_end]),
-                    margin=dict(l=60, r=20 + (len(right_positions) * 55), t=50, b=60)
+                    xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[xaxis_start, 1.0]),
+                    margin=dict(l=50 + (total_axes * 40), r=30, t=50, b=60)
                 )
                 
-                plotly_pos_map = {}
-                r_count = 0
-                for p in chosen_positions:
-                    if p == "左側":
-                        plotly_pos_map[p] = {"id": "y", "key": "yaxis", "side": "left"}
-                    else:
-                        r_count += 1
-                        plotly_pos_map[p] = {
-                            "id": f"y{r_count + 1}", 
-                            "key": f"yaxis{r_count + 1}", 
-                            "side": "right",
-                            "pos": min(1.0, 1.0 - (max(0, len(right_positions) - r_count) * 0.045))
-                        }
-                
-                for p, p_info in plotly_pos_map.items():
-                    axis_args = {"title": p, "tickformat": "f", "side": p_info["side"]}
-                    if p_info["side"] == "right":
-                        axis_args.update({"overlaying": "y", "anchor": "free", "position": p_info["pos"]})
+                for y_loop, y_col in enumerate(y_axes):
+                    layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
+                    target_yaxis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
                     
-                    for y_col in y_axes:
-                        if single_y_positions[y_col] == p:
-                            mn = single_y_mins.get(y_col, "").strip()
-                            mx = single_y_maxs.get(y_col, "").strip()
-                            if mn != "" and mx != "":
-                                axis_args["range"] = [float(mn), float(mx)]
-                                axis_args["autorange"] = False
-                                break
-                    fig.layout[p_info["key"]] = axis_args
+                    axis_title = single_y_titles.get(y_col, y_col)
+                    axis_args = {"title": axis_title, "tickformat": "f", "side": "left"}
+                    
+                    mn = single_y_mins.get(y_col, "").strip()
+                    mx = single_y_maxs.get(y_col, "").strip()
+                    if mn != "" and mx != "":
+                        axis_args["range"] = [float(mn), float(mx)]
+                        axis_args["autorange"] = False
+                    
+                    if y_loop > 0:
+                        axis_args.update({
+                            "overlaying": "y", "anchor": "free",
+                            "position": max(0.0, xaxis_start - (y_loop * offset_dist))
+                        })
+                    fig.layout[layout_key] = axis_args
 
-                for y_col in y_axes:
-                    pos_type = single_y_positions[y_col]
-                    target_yaxis_id = plotly_pos_map[pos_type]["id"]
                     chosen_shape = single_y_shapes.get(y_col, "直線（全点結ぶ・マーカーあり）")
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
@@ -244,7 +220,7 @@ if st.session_state.datasets:
                         degree = 1 if "1次近似" in chosen_shape else 2
                         x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode="markers", marker=dict(color=color, opacity=0.4, size=7), name=f"{y_col} (元データ)", yaxis=target_yaxis_id, showlegend=False))
-                        fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"), name=f"{y_col} (トレンド線)", yaxis=target_yaxis_id))
+                        fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"), name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id))
                     else:
                         line_config = dict(color=color)
                         if chosen_shape == "直線（全点結ぶ・マーカーあり）": plot_mode = "lines+markers"
@@ -252,12 +228,12 @@ if st.session_state.datasets:
                         elif chosen_shape == "点（マーカー）のみ": plot_mode = "markers"
                         elif chosen_shape == "直線のみ（全点結ぶ）": plot_mode = "lines"
                         else: plot_mode = "lines+markers"
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode=plot_mode, line=line_config, marker=dict(color=color), name=y_col, yaxis=target_yaxis_id))
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode=plot_mode, line=line_config, marker=dict(color=color), name=axis_title, yaxis=target_yaxis_id))
                     
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション (左・下 集中配置仕様)
+    # 3. グラフの合体セクション (完全左側・下側 集中レイアウト)
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
@@ -369,25 +345,21 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # ★ 左側・下側 集中レイアウトの動的計算ロジック
+        # 左側・下側 集中レイアウトの動的計算
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        # 軸数に応じて描画エリア（domain）の左端と下端を動的に削り、マージン（余白）を確保
-        offset_distance = 0.065 # 各軸の間隔
-        
+        offset_distance = 0.065 
         total_left_y_axes = len(active_y_grps)
         total_bottom_x_axes = len(active_x_grps)
         
-        # 本文（プロット領域）の開始位置を計算
         xaxis_domain_start = max(0.0, offset_distance * (total_left_y_axes - 1))
         yaxis_domain_start = max(0.0, offset_distance * (total_bottom_x_axes - 1))
         
         merged_fig.update_layout(
             hovermode="closest",
-            # 全体の余白も軸数に合わせてゆったり自動調整
             margin=dict(
                 l=50 + (total_left_y_axes * 40), 
                 r=40, 
@@ -396,7 +368,7 @@ if st.session_state.datasets:
             ),
         )
 
-        # 1. 横軸(X)レイアウトの構築 【すべて下側に並べる】
+        # 1. 横軸(X) 【すべて下側配置】
         plotly_x_id_map = {}
         for loop_idx, x_grp_num in enumerate(active_x_grps):
             layout_key = "xaxis" if loop_idx == 0 else f"xaxis{loop_idx + 1}"
@@ -414,18 +386,15 @@ if st.session_state.datasets:
             except ValueError: pass
 
             if loop_idx == 0:
-                # 基準となる最初のX軸
                 x_setup.update(dict(domain=[xaxis_domain_start, 1.0]))
             else:
-                # 2個目以降のX軸はさらに下にずらしていく
                 x_setup.update(dict(
-                    overlaying="x", 
-                    anchor="free",
+                    overlaying="x", anchor="free",
                     position=max(0.0, yaxis_domain_start - (loop_idx * offset_distance))
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 2. 縦軸(Y)レイアウトの構築 【すべて左側に並べる】
+        # 2. 縦軸(Y) 【すべて左側配置】
         plotly_y_id_map = {}
         for loop_idx, y_grp_num in enumerate(active_y_grps):
             layout_key = "yaxis" if loop_idx == 0 else f"yaxis{loop_idx + 1}"
@@ -443,13 +412,10 @@ if st.session_state.datasets:
             except ValueError: pass
 
             if loop_idx == 0:
-                # 基準となる最初のY軸
                 y_setup.update(dict(domain=[yaxis_domain_start, 1.0]))
             else:
-                # 2個目以降のY軸はさらに左にずらしていく
                 y_setup.update(dict(
-                    overlaying="y", 
-                    anchor="free",
+                    overlaying="y", anchor="free",
                     position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance))
                 ))
             merged_fig.layout[layout_key] = y_setup
@@ -472,6 +438,7 @@ if st.session_state.datasets:
                 color_idx_merged += 1
                 
                 chosen_shape = cfg.get("shapes", {}).get(y_axis, "直線（全点結ぶ・マーカーあり）")
+                display_label = f"{dataset['name']}-{y_axis}"
                 
                 if "トレンド線" in chosen_shape:
                     degree = 1 if "1次近似" in chosen_shape else 2
@@ -480,13 +447,13 @@ if st.session_state.datasets:
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
                         marker=dict(color=color, opacity=0.3, size=6),
-                        name=f"{dataset['name']}-{y_axis} (点)",
+                        name=f"{display_label} (点)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
                     ))
                     merged_fig.add_trace(go.Scatter(
                         x=x_t, y=y_t, mode="lines",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
-                        name=f"{dataset['name']}-{y_axis} (トレンド)",
+                        name=f"{display_label} (トレンド)",
                         xaxis=target_xaxis, yaxis=target_yaxis
                     ))
                 else:
@@ -500,7 +467,7 @@ if st.session_state.datasets:
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode=m_mode,
                         line=line_config_merged, marker=dict(color=color),
-                        name=f"{dataset['name']}-{y_axis}",
+                        name=display_label,
                         xaxis=target_xaxis, yaxis=target_yaxis
                     ))
 
