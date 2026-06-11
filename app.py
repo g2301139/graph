@@ -9,7 +9,7 @@ import re
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
 st.title("📊 高機能マルチグラフ作成Webアプリ")
-st.write("複数のデータを個別に入力・設定し、合体時には指定したデータ同士の縦軸・横軸を自由に選んで統合できるようになりました。")
+st.write("合体する前（個別データ内）でも、合体した後（複数データ間）でも、縦軸・横軸を自由自在に統合・分離できるようになりました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -122,7 +122,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと）
+# 2. グラフの設定（データごと） - ★合体前の軸統合に対応
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -150,66 +150,96 @@ if st.session_state.datasets:
                 default_y_label = ", ".join(y_axes) if y_axes else "値"
                 custom_y_label = st.text_input("全体の縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
 
-            st.markdown("✏️ **個別グラフの各縦軸詳細設定（軸名・範囲・形状）**")
+            st.markdown("✏️ **個別グラフの各縦軸詳細設定（形状・軸の統合位置）**")
             single_y_titles = {}
             single_y_mins = {}
             single_y_maxs = {}
             single_y_shapes = {}
+            single_y_positions = {} # ★ 個別グラフ内で「どの軸（位置）を共有するか」を指定
             
             if y_axes:
                 for y_loop, y_col in enumerate(y_axes):
-                    if y_loop == 0: st.markdown(f"##### 🔹 第1縦軸（左側）: 「{y_col}」用")
-                    else: st.markdown(f"##### 🔸 第{y_loop + 1}縦軸（右側）: 「{y_col}」用")
-                        
-                    t_col, shape_col, min_col, max_col = st.columns([2, 2, 1, 1])
-                    with t_col: single_y_titles[y_col] = st.text_input(f"軸名 [{y_col}]", value=y_col, key=f"single_title_{idx}_{y_col}")
+                    st.markdown(f"##### 🔹 列名: 「{y_col}」 の設定")
+                    pos_col, shape_col, min_col, max_col = st.columns([1.5, 2, 1, 1])
+                    
+                    with pos_col:
+                        # ★ 同じ位置（例：左側）を選んだ系列同士は、合体前グラフでも自動統合されます
+                        single_y_positions[y_col] = st.selectbox(
+                            f"軸の割り当て位置",
+                            options=["左側", "右側-1", "右側-2", "右側-3"],
+                            index=0 if y_loop == 0 else min(y_loop, 1),
+                            key=f"single_pos_{idx}_{y_col}"
+                        )
                     with shape_col:
                         single_y_shapes[y_col] = st.selectbox(
                             f"グラフの形状",
                             options=["直線（全点結ぶ・マーカーあり）", "なめらかな曲線（全点結ぶ）", "点（マーカー）のみ", "直線のみ（全点結ぶ）", "📈 トレンド線（直線：1次近似）", "📈 トレンド線（なめらかな曲線：2次近似）"],
                             index=0, key=f"single_shape_{idx}_{y_col}"
                         )
-                    with min_col: single_y_mins[y_col] = st.text_input(f"最小値（空欄自動）", value="", key=f"single_min_{idx}_{y_col}")
-                    with max_col: single_y_maxs[y_col] = st.text_input(f"最大値（空欄自動）", value="", key=f"single_max_{idx}_{y_col}")
+                    with min_col: single_y_mins[y_col] = st.text_input(f"最小値（自動は空欄）", value="", key=f"single_min_{idx}_{y_col}")
+                    with max_col: single_y_maxs[y_col] = st.text_input(f"最大値（自動は空欄）", value="", key=f"single_max_{idx}_{y_col}")
 
             configs[idx] = {
                 "x_axis": x_axis, "y_axes": y_axes, "color_axis": color_axis,
                 "custom_x_label": custom_x_label, "custom_y_label": custom_y_label,
-                "shapes": single_y_shapes, "titles": single_y_titles, "mins": single_y_mins, "maxs": single_y_maxs
+                "shapes": single_y_shapes, "mins": single_y_mins, "maxs": single_y_maxs,
+                "positions": single_y_positions
             }
 
             if y_axes:
                 fig = go.Figure()
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
-                single_axis_count = len(y_axes)
-                left_domain_end = max(0.1, 1.0 - (max(0, single_axis_count - 1) * 0.06))
                 
+                # ユーザーが指定したユニークな軸位置（例: ["左側", "右側-1"])
+                chosen_positions = sorted(list(set(single_y_positions.values())))
+                right_positions = [p for p in chosen_positions if p != "左側"]
+                
+                left_domain_end = max(0.12, 1.0 - (len(right_positions) * 0.06))
                 fig.update_layout(
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
                     xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[0.0, left_domain_end]),
-                    margin=dict(l=60, r=20 + (max(0, single_axis_count - 1) * 60), t=50, b=60)
+                    margin=dict(l=60, r=20 + (len(right_positions) * 60), t=50, b=60)
                 )
                 
-                for y_loop, y_col in enumerate(y_axes):
-                    layout_key = "yaxis" if y_loop == 0 else f"yaxis{y_loop + 1}"
-                    target_yaxis_id = "y" if y_loop == 0 else f"y{y_loop + 1}"
-                    axis_args = {"title": single_y_titles.get(y_col, y_col), "tickformat": "f"}
-                    
-                    try:
-                        mn = single_y_mins.get(y_col, "").strip()
-                        mx = single_y_maxs.get(y_col, "").strip()
-                        if mn != "" and mx != "":
-                            axis_args["range"] = [float(mn), float(mx)]
-                            axis_args["autorange"] = False
-                    except ValueError: pass
-                    
-                    if y_loop == 0: axis_args["side"] = "left"
+                # Plotly上のレイアウトキーの対応表マップを作成
+                plotly_pos_map = {}
+                r_count = 0
+                for p in chosen_positions:
+                    if p == "左側":
+                        plotly_pos_map[p] = {"id": "y", "key": "yaxis", "side": "left"}
                     else:
-                        axis_args.update({"side": "right", "overlaying": "y", "anchor": "free", "position": min(1.0, 1.0 - (max(0, single_axis_count - 1 - y_loop) * 0.04))})
+                        r_count += 1
+                        plotly_pos_map[p] = {
+                            "id": f"y{r_count + 1}", 
+                            "key": f"yaxis{r_count + 1}", 
+                            "side": "right",
+                            "pos": min(1.0, 1.0 - (max(0, len(right_positions) - r_count) * 0.04))
+                        }
+                
+                # 軸スケールとラベルの適用
+                for p, p_info in plotly_pos_map.items():
+                    axis_args = {"title": p, "tickformat": "f", "side": p_info["side"]}
+                    if p_info["side"] == "right":
+                        axis_args.update({"overlaying": "y", "anchor": "free", "position": p_info["pos"]})
                     
-                    fig.layout[layout_key] = axis_args
+                    # 範囲の手動入力チェック (最初に見つかった手動設定を適用)
+                    for y_col in y_axes:
+                        if single_y_positions[y_col] == p:
+                            mn = single_y_mins.get(y_col, "").strip()
+                            mx = single_y_maxs.get(y_col, "").strip()
+                            if mn != "" and mx != "":
+                                axis_args["range"] = [float(mn), float(mx)]
+                                axis_args["autorange"] = False
+                                break
+                    fig.layout[p_info["key"]] = axis_args
+
+                # 各系列のプロット
+                for y_col in y_axes:
+                    pos_type = single_y_positions[y_col]
+                    target_yaxis_id = plotly_pos_map[pos_type]["id"]
+                    
                     chosen_shape = single_y_shapes.get(y_col, "直線（全点結ぶ・マーカーあり）")
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
@@ -238,8 +268,8 @@ if st.session_state.datasets:
     st.write("合体させたいデータを選び、それぞれ「どの横軸グループ」「どの縦軸グループ」に割り当てるか指定してください。**同じグループに設定したデータ同士は自動で軸が統合されます。**")
     
     selected_indices = []
-    mapping_xaxis_grp = {} # idx -> 割り当てられたX軸グループ番号(1~4)
-    mapping_yaxis_grp = {} # idx -> 割り当てられたY軸グループ番号(1~4)
+    mapping_xaxis_grp = {}
+    mapping_yaxis_grp = {}
     
     cb_cols = st.columns(len(st.session_state.datasets))
     for idx, dataset in enumerate(st.session_state.datasets):
@@ -252,7 +282,7 @@ if st.session_state.datasets:
                 chosen_x = st.selectbox(
                     f"└ 🔗 横軸グループ",
                     options=["横軸 1", "横軸 2", "横軸 3", "横軸 4"],
-                    index=0, # デフォルトはすべて「横軸 1」に統合
+                    index=0,
                     key=f"user_x_grp_{idx}"
                 )
                 mapping_xaxis_grp[idx] = int(re.search(r'\d+', chosen_x).group())
@@ -261,7 +291,7 @@ if st.session_state.datasets:
                 chosen_y = st.selectbox(
                     f"└ 🔗 縦軸グループ",
                     options=["縦軸 1 (左側)", "縦軸 2 (右側-1)", "縦軸 3 (右側-2)", "縦軸 4 (右側-3)"],
-                    index=0 if idx == 0 else min(idx, 1), # 初期値として少しばらけさせる親切設計
+                    index=0 if idx == 0 else min(idx, 1),
                     key=f"user_y_grp_{idx}"
                 )
                 mapping_yaxis_grp[idx] = int(re.search(r'\d+', chosen_y).group())
@@ -273,13 +303,11 @@ if st.session_state.datasets:
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        # 実際にユーザーに選ばれて「稼働している」軸グループのリストを取得（重複排除）
         active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
         active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
         
-        # グラフ描画エリアの左右マージン配分
         right_y_count = len([a for a in active_y_grps if a > 1])
-        left_xaxis_domain = 0.07 * len([a for a in active_y_grps if a == 1]) # 左側の縦軸の数に応じた余白
+        left_xaxis_domain = 0.07 * len([a for a in active_y_grps if a == 1])
         left_xaxis_domain = max(0.12, left_xaxis_domain)
         right_xaxis_domain = max(0.1, 1.0 - (right_y_count * 0.06))
         
@@ -288,24 +316,19 @@ if st.session_state.datasets:
             margin=dict(l=20 + (len(active_y_grps)*40), r=20 + (right_y_count*60), t=50, b=40 + (len(active_x_grps)*40)),
         )
 
-        # -------------------------------------------------------------------------
-        # 稼働している【横軸(X軸)グループ】のレイアウト作成・登録
-        # -------------------------------------------------------------------------
-        plotly_x_id_map = {} # Xグループ番号 -> PlotlyのスタンスID ("x", "x2"...)
+        # 【合体後】稼働している横軸グループ設定
+        plotly_x_id_map = {}
         for loop_idx, x_grp_num in enumerate(active_x_grps):
             layout_key = "xaxis" if loop_idx == 0 else f"xaxis{loop_idx + 1}"
             plotly_x_id_map[x_grp_num] = "x" if loop_idx == 0 else f"x{loop_idx + 1}"
             
-            # 代表として、このグループを使う最初のデータセットの設定名を取得
             rep_idx = [i for i, g in mapping_xaxis_grp.items() if g == x_grp_num][0]
             rep_label = configs[rep_idx]["custom_x_label"]
-            
             x_setup = dict(title=f"横軸グループ {x_grp_num} ({rep_label})", tickformat="f")
             
             if loop_idx == 0:
                 x_setup.update(dict(side="bottom", domain=[left_xaxis_domain, right_xaxis_domain]))
             else:
-                # 2つ目以降の横軸グループは上下に交互に配置をオフセット
                 side_pos = "top" if loop_idx % 2 == 1 else "bottom"
                 offset = (loop_idx // 2) * 0.08
                 x_setup.update(dict(
@@ -314,12 +337,9 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # -------------------------------------------------------------------------
-        # 稼働している【縦軸(Y軸)グループ】のレイアウト作成・登録
-        # -------------------------------------------------------------------------
-        plotly_y_id_map = {} # Yグループ番号 -> PlotlyのスタンスID ("y", "y2"...)
+        # 【合体後】稼働している縦軸グループ設定
+        plotly_y_id_map = {}
         right_drawn_count = 0
-        
         for loop_idx, y_grp_num in enumerate(active_y_grps):
             if y_grp_num == 1:
                 layout_key = "yaxis"
@@ -329,39 +349,31 @@ if st.session_state.datasets:
                 layout_key = f"yaxis{right_drawn_count + 1}"
                 plotly_y_id_map[y_grp_num] = f"y{right_drawn_count + 1}"
             
-            # 代表として、このグループを使う最初のデータセットの設定名を取得
             rep_idx = [i for i, g in mapping_yaxis_grp.items() if g == y_grp_num][0]
             rep_label = configs[rep_idx]["custom_y_label"]
-            
             y_setup = dict(title=f"縦軸グループ {y_grp_num} ({rep_label})", tickformat="f")
             
             if y_grp_num == 1:
                 y_setup.update(dict(side="left", anchor="x"))
             else:
-                # 軸グループ2以降は右側に順番に並べる
                 y_setup.update(dict(
                     side="right", overlaying="y", anchor="free",
                     position=min(1.0, 1.0 - (max(0, right_y_count - right_drawn_count) * 0.05))
                 ))
             merged_fig.layout[layout_key] = y_setup
 
-        # -------------------------------------------------------------------------
-        # データプロット（選択された全系列の描画ループ）
-        # -------------------------------------------------------------------------
+        # 合体グラフへのプロット
         for idx in selected_indices:
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            # このデータセットが所属する「Plotly上の軸ID」を取得
             user_x_grp = mapping_xaxis_grp[idx]
             user_y_grp = mapping_yaxis_grp[idx]
-            
             target_xaxis = plotly_x_id_map[user_x_grp]
             target_yaxis = plotly_y_id_map[user_y_grp]
 
-            # ユーザーが選択したすべてのY軸（縦軸データ）をプロット
             for y_axis in cfg["y_axes"]:
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
@@ -372,14 +384,12 @@ if st.session_state.datasets:
                     degree = 1 if "1次近似" in chosen_shape else 2
                     x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
                     
-                    # 元データ（点）
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
                         marker=dict(color=color, opacity=0.3, size=6),
                         name=f"{dataset['name']}-{y_axis} (点)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
                     ))
-                    # 近似曲線（トレンド線）
                     merged_fig.add_trace(go.Scatter(
                         x=x_t, y=y_t, mode="lines",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
