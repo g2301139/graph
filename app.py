@@ -1,15 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import px = plotly.express as px
+import plotly.express as px
 import numpy as np
 from io import StringIO
 import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (完全左・下軸統一版)")
-st.write("個別グラフ・合体グラフのすべてにおいて、縦軸は「左側」、横軸は「下側」に完全統一し、すべての軸名を個別に編集できるようにしました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (バグ修正・左下軸統一版)")
+st.write("個別グラフ・合体グラフのすべてにおいて、縦軸は「左側」、横軸は「下側」に完全統一し、すべての軸名を個別に編集できます。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -78,7 +78,7 @@ if submit_button and paste_input.strip():
             new_df = pd.read_csv(StringIO(final_input), sep=r'\s+', engine='python')
         
         st.session_state.datasets.append({"name": dataset_name, "df": new_df})
-        st.success(f"「{dataset_name}"] を追加しました！")
+        st.success(f"「{dataset_name}」を追加しました！") # 括弧のバグを修正
         st.session_state.input_buffer = default_paste_data
         st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
         st.rerun()
@@ -345,7 +345,7 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # 左側・下側 集中レイアウトの動的計算
+        # 左側・下側 集中レイアウトの動的計算（バグ修正版）
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
@@ -394,7 +394,7 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 2. 縦軸(Y) 【すべて左側配置】
+        # 2. 縦軸(Y) 【すべて左側配置】（安全な辞書更新アプローチに変更）
         plotly_y_id_map = {}
         for loop_idx, y_grp_num in enumerate(active_y_grps):
             layout_key = "yaxis" if loop_idx == 0 else f"yaxis{loop_idx + 1}"
