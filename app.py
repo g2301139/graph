@@ -8,7 +8,7 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (点の形 20種類・超大盛り版)")
+st.title("📊 高機能マルチグラフ作成Webアプリ (点の形 20種類・バグ修正版)")
 st.write("点の形（マーカー）のバリエーションを20種類まで拡張しました！複雑なマルチ軸グラフでも抜群に見分けやすくなります。")
 
 # -----------------------------------------------------------------------------
@@ -126,7 +126,7 @@ if st.session_state.datasets:
 # -----------------------------------------------------------------------------
 configs = {}
 
-# ★ 点の形（シンボル）を限界突破の20種類に増量！
+# 点の形（シンボル）20種類マッピング
 symbol_map = {
     "丸（●）": "circle",
     "四角（■）": "square",
@@ -200,7 +200,6 @@ if st.session_state.datasets:
                         default_hex = plotly_default_colors[y_loop % len(plotly_default_colors)]
                         single_y_colors[y_col] = st.color_picker(f"線の色 / 点の色", value=default_hex, key=f"single_color_{idx}_{y_col}")
                     with row2_c2:
-                        # 自動で様々な形が最初から割り振られるように設定
                         single_y_symbols[y_col] = st.selectbox(
                             f"点の形（マーカー）",
                             options=list(symbol_map.keys()), index=y_loop % len(symbol_map), key=f"single_symbol_{idx}_{y_col}"
@@ -261,7 +260,6 @@ if st.session_state.datasets:
                         fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"), name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id))
                     else:
                         line_config = dict(color=color)
-                        # 各種シンボルが綺麗に見えるようサイズを「10」と少し大きめに設定
                         marker_config = dict(color=color, size=10, symbol=plotly_symbol)
                         
                         if chosen_shape == "直線（全点結ぶ・マーカーあり）": plot_mode = "lines+markers"
@@ -451,7 +449,8 @@ if st.session_state.datasets:
 
             if loop_idx == 0:
                 y_setup.update(dict(domain=[yaxis_domain_start, 1.0]))
-            else(dict(
+            else:
+                y_setup.update(dict(
                     overlaying="y", anchor="free",
                     position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance))
                 ))
