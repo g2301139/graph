@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (軸カスタム完全版)")
-st.write("合体後に「どのデータの何」が統合されているかを見える化し、合体後の各軸名や最小値・最大値も自由に編集できるようになりました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (初期軸完全分離版)")
+st.write("合体した直後は、すべての軸が独立（データ1の軸数 ＋ データ2の軸数）して表示され、そこから選んだものだけを自由に統合できます。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -152,7 +152,7 @@ if st.session_state.datasets:
                 default_y_label = ", ".join(y_axes) if y_axes else "値"
                 custom_y_label = st.text_input("全体の縦軸の表示名", value=default_y_label, key=f"label_y_{idx}")
 
-            st.markdown("✏️ **個別グラフの各縦軸詳細設定（形状・軸の統合位置：最大10軸）**")
+            st.markdown("✏️ **個別グラフの各縦軸詳細設定（形状・軸の統合位置）**")
             single_y_titles = {}
             single_y_mins = {}
             single_y_maxs = {}
@@ -236,7 +236,6 @@ if st.session_state.datasets:
                 for y_col in y_axes:
                     pos_type = single_y_positions[y_col]
                     target_yaxis_id = plotly_pos_map[pos_type]["id"]
-                    
                     chosen_shape = single_y_shapes.get(y_col, "直線（全点結ぶ・マーカーあり）")
                     color = color_cycle[color_idx % len(color_cycle)]
                     color_idx += 1
@@ -258,73 +257,96 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション
+    # 3. グラフの合体セクション (初期状態完全バラバラ・指定型統合システム)
     # -----------------------------------------------------------------------------
     st.markdown("---")
-    st.header("3. 🔗 グラフの合体設定と統合状態の見える化")
-    st.write("データを選び、統合するグループ番号（1〜10）を指定してください。")
+    st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
+    st.write("チェックを入れたデータが合体します。**初期状態では全ての軸がバラバラ（独立）**に配置されています。同じグループ番号（1〜10）を指定した軸同士だけが統合されます。")
     
     selected_indices = []
-    mapping_xaxis_grp = {}
-    mapping_yaxis_grp = {}
-    
-    x_grp_options = [f"横軸 {i}" for i in range(1, 11)]
-    y_grp_options = [f"縦軸 {i}" for i in range(1, 11)]
-    
-    cb_cols = st.columns(len(st.session_state.datasets))
+    cb_cols = st.columns(max(1, len(st.session_state.datasets)))
     for idx, dataset in enumerate(st.session_state.datasets):
         with cb_cols[idx]:
-            is_checked = st.checkbox(f"合体する: {dataset['name']}", value=True, key=f"merge_cb_{idx}")
-            if is_checked:
+            if st.checkbox(f"合体する: {dataset['name']}", value=True, key=f"merge_cb_{idx}"):
                 selected_indices.append(idx)
-                
-                chosen_x = st.selectbox(
-                    f"└ 横軸グループ(X)", options=x_grp_options, index=0, key=f"user_x_grp_{idx}"
-                )
-                mapping_xaxis_grp[idx] = int(re.search(r'\d+', chosen_x).group())
-                
-                chosen_y = st.selectbox(
-                    f"└ 縦軸グループ(Y)", options=y_grp_options, index=0 if idx == 0 else min(idx, len(y_grp_options)-1), key=f"user_y_grp_{idx}"
-                )
-                mapping_yaxis_grp[idx] = int(re.search(r'\d+', chosen_y).group())
 
     if len(selected_indices) >= 1:
+        # 系列（カラム）ごとに統合先グループを選べるように、すべての有効なX軸、Y軸をフラットにリストアップする
+        all_x_series = []
+        all_y_series = []
+        
+        # 選択肢用の配列
+        grp_options = [f"グループ {i}" for i in range(1, 11)]
+        
+        # 割り当て用UI
+        st.markdown("### 🛠️ 軸グループの統合コントロール（ここで同じ番号を選ぶと統合されます）")
+        
+        # 初期状態で完全にバラバラにするためのカウンタデフォルト値
+        init_x_counter = 0
+        init_y_counter = 0
+        
+        mapping_xaxis_grp = {} # key: (idx, 'x') -> グループ番号(1~10)
+        mapping_yaxis_grp = {} # key: (idx, y_col) -> グループ番号(1~10)
+
+        # ユーザー設定UIの展開
+        set_col1, set_col2 = st.columns(2)
+        
+        with set_col1:
+            st.markdown("#### 📐 横軸（X軸）の統合設定")
+            for idx in selected_indices:
+                d_name = st.session_state.datasets[idx]["name"]
+                x_col = configs[idx]["x_axis"]
+                init_x_counter += 1
+                def_idx = min(init_x_counter - 1, len(grp_options) - 1)
+                
+                chosen_x = st.selectbox(
+                    f"📁 {d_name} の横軸 [{x_col}] の統合先",
+                    options=grp_options, index=def_idx, key=f"m_x_select_{idx}"
+                )
+                g_num = int(re.search(r'\d+', chosen_x).group())
+                mapping_xaxis_grp[idx] = g_num
+
+        with set_col2:
+            st.markdown("#### 📐 縦軸（Y軸）の統合設定")
+            for idx in selected_indices:
+                d_name = st.session_state.datasets[idx]["name"]
+                for y_col in configs[idx]["y_axes"]:
+                    init_y_counter += 1
+                    def_idx = min(init_y_counter - 1, len(grp_options) - 1)
+                    
+                    chosen_y = st.selectbox(
+                        f"📁 {d_name} の縦軸 [{y_col}] の統合先",
+                        options=grp_options, index=def_idx, key=f"m_y_select_{idx}_{y_col}"
+                    )
+                    g_num = int(re.search(r'\d+', chosen_y).group())
+                    mapping_yaxis_grp[(idx, y_col)] = g_num
+
+        # 稼働しているグループ番号の抽出
         active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
         active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
-        
+
         # -------------------------------------------------------------------------
         # ★ 統合状態の見える化表示（「データなんの何とデータなんの何を統合」）
         # -------------------------------------------------------------------------
         st.info("💡 **現在の軸グループ統合ステータス（同室一覧）**")
-        
         status_cols = st.columns(2)
         with status_cols[0]:
             st.markdown("**【横軸(X)の統合詳細】**")
             for x_g in active_x_grps:
-                joined_members = []
-                for idx in selected_indices:
-                    if mapping_xaxis_grp[idx] == x_g:
-                        joined_members.append(f"「{st.session_state.datasets[idx]['name']}」の [{configs[idx]['x_axis']}]")
-                st.markdown(f"* 🔗 **横軸 {x_g}**: " + " ＋ ".join(joined_members) + " を統合中")
+                members = [f"「{st.session_state.datasets[i]['name']}」の [{configs[i]['x_axis']}]" for i, g in mapping_xaxis_grp.items() if g == x_g]
+                st.markdown(f"* 🔗 **横軸グループ {x_g}**: " + " ＋ ".join(members) + " を統合中")
                 
         with status_cols[1]:
             st.markdown("**【縦軸(Y)の統合詳細】**")
             for y_g in active_y_grps:
-                joined_members = []
-                for idx in selected_indices:
-                    if mapping_yaxis_grp[idx] == y_g:
-                        cfg = configs[idx]
-                        for y_col in cfg["y_axes"]:
-                            joined_members.append(f"「{st.session_state.datasets[idx]['name']}」の [{y_col}]")
-                if joined_members:
-                    st.markdown(f"* 🔗 **縦軸 {y_g}**: " + " ＋ ".join(joined_members) + " を統合中")
+                members = [f"「{st.session_state.datasets[k[0]]['name']}」の [{k[1]}]" for k, g in mapping_yaxis_grp.items() if g == y_g]
+                st.markdown(f"* 🔗 **縦軸グループ {y_g}**: " + " ＋ ".join(members) + " を統合中")
 
         # -------------------------------------------------------------------------
         # ★ 合体グラフ側の軸名・最小値・最大値のカスタム編集フォーム
         # -------------------------------------------------------------------------
         st.markdown("---")
-        st.subheader("✏️ 合体グラフ専用：統合軸の詳細編集（軸名・範囲指定）")
-        st.write("統合されたそれぞれの軸グループごとに、名前や表示範囲（最小・最大）を個別に上書きカスタムできます。")
+        st.subheader("✏️ 統合軸の詳細編集（軸名・範囲指定）")
         
         merged_x_titles = {}
         merged_x_mins = {}
@@ -333,34 +355,36 @@ if st.session_state.datasets:
         merged_y_mins = {}
         merged_y_maxs = {}
         
-        # 横軸カスタム入力
-        st.markdown("##### 📐 横軸(X)のカスタムエリア")
+        # 横軸カスタム
+        st.markdown("##### 📐 横軸のカスタムエリア")
         x_input_cols = st.columns(max(1, len(active_x_grps)))
         for l_idx, x_grp_num in enumerate(active_x_grps):
             with x_input_cols[l_idx]:
-                rep_idx = [i for i, g in mapping_xaxis_grp.items() if g == x_grp_num][0]
-                default_label = f"横軸G-{x_grp_num} ({configs[rep_idx]['custom_x_label']})"
+                rep_keys = [i for i, g in mapping_xaxis_grp.items() if g == x_grp_num]
+                rep_label = configs[rep_keys[0]]["custom_x_label"] if rep_keys else ""
+                default_label = f"横軸G-{x_grp_num} ({rep_label})"
                 
                 merged_x_titles[x_grp_num] = st.text_input(f"横軸 {x_grp_num} の表示名", value=default_label, key=f"m_title_x_{x_grp_num}")
                 x_min_col, x_max_col = st.columns(2)
                 with x_min_col: merged_x_mins[x_grp_num] = st.text_input(f"最小値", value="", key=f"m_min_x_{x_grp_num}")
                 with x_max_col: merged_x_maxs[x_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_x_{x_grp_num}")
 
-        # 縦軸カスタム入力
-        st.markdown("##### 📐 縦軸(Y)のカスタムエリア")
+        # 縦軸カスタム
+        st.markdown("##### 📐 縦軸のカスタムエリア")
         y_input_cols = st.columns(max(1, len(active_y_grps)))
         for l_idx, y_grp_num in enumerate(active_y_grps):
             with y_input_cols[l_idx]:
-                rep_idx = [i for i, g in mapping_yaxis_grp.items() if g == y_grp_num][0]
-                default_label = f"縦軸G-{y_grp_num} ({configs[rep_idx]['custom_y_label']})"
+                rep_keys = [k for k, g in mapping_yaxis_grp.items() if g == y_grp_num]
+                rep_label = rep_keys[0][1] if rep_keys else ""
+                default_label = f"縦軸G-{y_grp_num} ({rep_label})"
                 
                 merged_y_titles[y_grp_num] = st.text_input(f"縦軸 {y_grp_num} の表示名", value=default_label, key=f"m_title_y_{y_grp_num}")
                 y_min_col, y_max_col = st.columns(2)
                 with y_min_col: merged_y_mins[y_grp_num] = st.text_input(f"最小値", value="", key=f"m_min_y_{y_grp_num}")
-                with x_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
+                with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # グラフ合成処理
+        # グラフ合成・描画処理
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
@@ -385,7 +409,6 @@ if st.session_state.datasets:
             x_title_user = merged_x_titles.get(x_grp_num, f"横軸 {x_grp_num}")
             x_setup = dict(title=x_title_user, tickformat="f")
             
-            # 手動範囲の適用
             try:
                 mn = merged_x_mins.get(x_grp_num, "").strip()
                 mx = merged_x_maxs.get(x_grp_num, "").strip()
@@ -420,7 +443,6 @@ if st.session_state.datasets:
             y_title_user = merged_y_titles.get(y_grp_num, f"縦軸 {y_grp_num}")
             y_setup = dict(title=y_title_user, tickformat="f")
             
-            # 手動範囲の適用
             try:
                 mn = merged_y_mins.get(y_grp_num, "").strip()
                 mx = merged_y_maxs.get(y_grp_num, "").strip()
@@ -438,19 +460,22 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = y_setup
 
-        # 系列のプロット
+        # 系列の最終プロット
         for idx in selected_indices:
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
+            # 横軸はデータセット単位
             user_x_grp = mapping_xaxis_grp[idx]
-            user_y_grp = mapping_yaxis_grp[idx]
             target_xaxis = plotly_x_id_map[user_x_grp]
-            target_yaxis = plotly_y_id_map[user_y_grp]
 
+            # 縦軸は系列単位
             for y_axis in cfg["y_axes"]:
+                user_y_grp = mapping_yaxis_grp[(idx, y_axis)]
+                target_yaxis = plotly_y_id_map[user_y_grp]
+
                 color = color_cycle_merged[color_idx_merged % len(color_cycle_merged)]
                 color_idx_merged += 1
                 
@@ -487,7 +512,7 @@ if st.session_state.datasets:
                         xaxis=target_xaxis, yaxis=target_yaxis
                     ))
 
-        st.subheader("📉 完全編集仕様・条件指定合体グラフ")
+        st.subheader("📉 完全独立・個別統合合体グラフ")
         st.plotly_chart(merged_fig, use_container_width=True, height=700, key="final_flexible_max10_merged_chart")
 else:
     st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
