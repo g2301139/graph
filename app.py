@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (バグ修正・左下軸統一版)")
-st.write("個別グラフ・合体グラフのすべてにおいて、縦軸は「左側」、横軸は「下側」に完全統一し、すべての軸名を個別に編集できます。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (軸文字重なり修正版)")
+st.write("左側に増えていく縦軸の文字が重ならないよう、軸同士の間隔と左側の余白を最適化しました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -78,7 +78,7 @@ if submit_button and paste_input.strip():
             new_df = pd.read_csv(StringIO(final_input), sep=r'\s+', engine='python')
         
         st.session_state.datasets.append({"name": dataset_name, "df": new_df})
-        st.success(f"「{dataset_name}」を追加しました！") # 括弧のバグを修正
+        st.success(f"「{dataset_name}」を追加しました！")
         st.session_state.input_buffer = default_paste_data
         st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
         st.rerun()
@@ -122,7 +122,7 @@ if st.session_state.datasets:
                     st.rerun()
 
 # -----------------------------------------------------------------------------
-# 2. グラフの設定（データごと） - 完全左側配置化
+# 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
 configs = {}
 
@@ -175,13 +175,13 @@ if st.session_state.datasets:
                 "titles": single_y_titles, "shapes": single_y_shapes, "mins": single_y_mins, "maxs": single_y_maxs
             }
 
-            # 個別グラフの描写（すべて左側に並べる）
             if y_axes:
                 fig = go.Figure()
                 color_cycle = px.colors.qualitative.Plotly
                 color_idx = 0
                 
-                offset_dist = 0.065
+                # 軸間の間隔（ドメイン比率）と、文字の重なり防止用ピクセルオフセット
+                offset_dist = 0.075
                 total_axes = len(y_axes)
                 xaxis_start = max(0.0, offset_dist * (total_axes - 1))
                 
@@ -189,7 +189,8 @@ if st.session_state.datasets:
                     title=dict(text=f"📊 グラフ: {dataset['name']}", font=dict(size=18)),
                     hovermode="closest",
                     xaxis=dict(title=custom_x_label, side="bottom", tickformat="f", domain=[xaxis_start, 1.0]),
-                    margin=dict(l=50 + (total_axes * 40), r=30, t=50, b=60)
+                    # 左側の余白を軸の数（文字幅含む）に応じて自動拡張
+                    margin=dict(l=60 + (total_axes * 55), r=40, t=50, b=60)
                 )
                 
                 for y_loop, y_col in enumerate(y_axes):
@@ -207,8 +208,10 @@ if st.session_state.datasets:
                     
                     if y_loop > 0:
                         axis_args.update({
-                            "overlaying": "y", "anchor": "free",
-                            "position": max(0.0, xaxis_start - (y_loop * offset_dist))
+                            "overlaying": "y", 
+                            "anchor": "free",
+                            "position": max(0.0, xaxis_start - (y_loop * offset_dist)),
+                            "offset": 15 * y_loop # 物理的に文字をさらに外側へずらして重なりを防御
                         })
                     fig.layout[layout_key] = axis_args
 
@@ -233,7 +236,7 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション (完全左側・下側 集中レイアウト)
+    # 3. グラフの合体セクション
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
@@ -249,7 +252,7 @@ if st.session_state.datasets:
     if len(selected_indices) >= 1:
         grp_options = [f"グループ {i}" for i in range(1, 11)]
         
-        st.markdown("### 🛠️ 軸グループの統合コントロール（ここで同じ番号を選ぶと統合されます）")
+        st.markdown("### 🛠️ 軸グループの統合コントロール")
         
         init_x_counter = 0
         init_y_counter = 0
@@ -292,22 +295,20 @@ if st.session_state.datasets:
         active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
         active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
 
-        # 統合状態の見える化表示
-        st.info("💡 **現在の軸グループ統合ステータス（同室一覧）**")
+        st.info("💡 **現在の軸グループ統合ステータス**")
         status_cols = st.columns(2)
         with status_cols[0]:
             st.markdown("**【横軸(X)の統合詳細】**")
             for x_g in active_x_grps:
                 members = [f"「{st.session_state.datasets[i]['name']}」の [{configs[i]['x_axis']}]" for i, g in mapping_xaxis_grp.items() if g == x_g]
-                st.markdown(f"* 🔗 **横軸グループ {x_g}**: " + " ＋ ".join(members) + " を統合中")
+                st.markdown(f"* 🔗 **横軸グループ {x_g}**: " + " ＋ ".join(members))
                 
         with status_cols[1]:
             st.markdown("**【縦軸(Y)の統合詳細】**")
             for y_g in active_y_grps:
                 members = [f"「{st.session_state.datasets[k[0]]['name']}」の [{k[1]}]" for k, g in mapping_yaxis_grp.items() if g == y_g]
-                st.markdown(f"* 🔗 **縦軸グループ {y_g}**: " + " ＋ ".join(members) + " を統合中")
+                st.markdown(f"* 🔗 **縦軸グループ {y_g}**: " + " ＋ ".join(members))
 
-        # 軸名・範囲設定のカスタム
         st.markdown("---")
         st.subheader("✏️ 統合軸の詳細編集（軸名・範囲指定）")
         
@@ -345,26 +346,28 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # 左側・下側 集中レイアウトの動的計算（バグ修正版）
+        # 合体グラフの描画レイアウト（重なりを徹底ガード）
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        offset_distance = 0.065 
+        offset_distance = 0.075 # 軸が増えるごとの表示座標のズレ幅
         total_left_y_axes = len(active_y_grps)
         total_bottom_x_axes = len(active_x_grps)
         
+        # 軸数に合わせて本グラフの描画領域のスタート地点を動的に押し上げる
         xaxis_domain_start = max(0.0, offset_distance * (total_left_y_axes - 1))
         yaxis_domain_start = max(0.0, offset_distance * (total_bottom_x_axes - 1))
         
         merged_fig.update_layout(
             hovermode="closest",
+            # ★文字数が多くても画面左端で見切れないよう、マージン(l)を大きく拡張
             margin=dict(
-                l=50 + (total_left_y_axes * 40), 
+                l=70 + (total_left_y_axes * 55), 
                 r=40, 
                 t=60, 
-                b=50 + (total_bottom_x_axes * 30)
+                b=60 + (total_bottom_x_axes * 35)
             ),
         )
 
@@ -394,7 +397,7 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 2. 縦軸(Y) 【すべて左側配置】（安全な辞書更新アプローチに変更）
+        # 2. 縦軸(Y) 【すべて左側配置 ＋ 重なり防止offset調整】
         plotly_y_id_map = {}
         for loop_idx, y_grp_num in enumerate(active_y_grps):
             layout_key = "yaxis" if loop_idx == 0 else f"yaxis{loop_idx + 1}"
@@ -414,9 +417,11 @@ if st.session_state.datasets:
             if loop_idx == 0:
                 y_setup.update(dict(domain=[yaxis_domain_start, 1.0]))
             else:
+                # 2個目以降の軸に対して、左に座標をずらしつつ、文字用の追加スペース(offset)を付与
                 y_setup.update(dict(
                     overlaying="y", anchor="free",
-                    position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance))
+                    position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance)),
+                    "offset": 15 * loop_idx # これで軸のタイトル同士の衝突を防ぎます
                 ))
             merged_fig.layout[layout_key] = y_setup
 
