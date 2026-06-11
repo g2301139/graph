@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (色・点の形 カスタマイズ版)")
-st.write("各縦軸の「表示名」「グラフ形状」に加え、「線の色」と「点の形（マーカー）」を自由に選べるようになりました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (点の形 大幅増量版)")
+st.write("点の形（マーカー）の選択肢を10種類に増やしました。データの種類に合わせてより見分けやすくなります。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -125,15 +125,20 @@ if st.session_state.datasets:
 # 2. グラフの設定（データごと）
 # -----------------------------------------------------------------------------
 configs = {}
-# Plotlyで使用する標準的な点（マーカー）の形マッピング
+
+# ★ 点の形（シンボル）を10種類に大幅拡張！
 symbol_map = {
     "丸（●）": "circle",
     "四角（■）": "square",
-    "三角（▲）": "triangle-up",
+    "上三角（▲）": "triangle-up",
+    "下三角（▼）": "triangle-down",
     "ダイヤ（◆）": "diamond",
-    "星（★）": "star"
+    "細いダイヤ（◊）": "diamond-tall",
+    "星（★）": "star",
+    "六角形（⬢）": "hexagon",
+    "バツ（×）": "x",
+    "プラス（＋）": "cross"
 }
-# デフォルト色サイクル
 plotly_default_colors = px.colors.qualitative.Plotly
 
 if st.session_state.datasets:
@@ -167,7 +172,6 @@ if st.session_state.datasets:
             if y_axes:
                 for y_loop, y_col in enumerate(y_axes):
                     st.markdown(f"##### 🔹 列名: 「{y_col}」 の設定")
-                    # 設定項目が増えたため2段に分けてすっきり配置
                     row1_c1, row1_c2, row1_c3, row1_c4 = st.columns([2, 2, 1, 1])
                     row2_c1, row2_c2, _ = st.columns([2, 2, 2])
                     
@@ -182,14 +186,14 @@ if st.session_state.datasets:
                     with row1_c3: single_y_mins[y_col] = st.text_input(f"最小値", value="", key=f"single_min_{idx}_{y_col}")
                     with row1_c4: single_y_maxs[y_col] = st.text_input(f"最大値", value="", key=f"single_max_{idx}_{y_col}")
                     
-                    # カラーピッカーと点の形（マーカーシボルの追加）
                     with row2_c1:
                         default_hex = plotly_default_colors[y_loop % len(plotly_default_colors)]
                         single_y_colors[y_col] = st.color_picker(f"線の色 / 点の色", value=default_hex, key=f"single_color_{idx}_{y_col}")
                     with row2_c2:
+                        # ループ順によってデフォルトの点の形が少し変わるようにインデックスを調整
                         single_y_symbols[y_col] = st.selectbox(
                             f"点の形（マーカー）",
-                            options=list(symbol_map.keys()), index=0, key=f"single_symbol_{idx}_{y_col}"
+                            options=list(symbol_map.keys()), index=y_loop % len(symbol_map), key=f"single_symbol_{idx}_{y_col}"
                         )
 
             configs[idx] = {
@@ -243,11 +247,12 @@ if st.session_state.datasets:
                     if "トレンド線" in chosen_shape:
                         degree = 1 if "1次近似" in chosen_shape else 2
                         x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode="markers", marker=dict(color=color, opacity=0.4, size=8, symbol=plotly_symbol), name=f"{y_col} (元データ)", yaxis=target_yaxis_id, showlegend=False))
+                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode="markers", marker=dict(color=color, opacity=0.4, size=9, symbol=plotly_symbol), name=f"{y_col} (元データ)", yaxis=target_yaxis_id, showlegend=False))
                         fig.add_trace(go.Scatter(x=x_t, y=y_t, mode="lines", line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"), name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id))
                     else:
                         line_config = dict(color=color)
-                        marker_config = dict(color=color, size=8, symbol=plotly_symbol)
+                        # バツやプラス、細い線でも潰れて見えなくならないようサイズを少し大きめ（9）に調整
+                        marker_config = dict(color=color, size=9, symbol=plotly_symbol)
                         
                         if chosen_shape == "直線（全点結ぶ・マーカーあり）": plot_mode = "lines+markers"
                         elif chosen_shape == "なめらかな曲線（全点結ぶ）": plot_mode = "lines+markers"; line_config["shape"] = "spline"
@@ -264,7 +269,7 @@ if st.session_state.datasets:
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
-    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。設定した色や点の形もそのまま引き継がれます。")
+    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。設定した色や豊富な点の形もそのまま引き継がれます。")
     
     selected_indices = []
     cb_cols = st.columns(max(1, len(st.session_state.datasets)))
@@ -370,7 +375,7 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # 合体グラフの描画レイアウト（カラー・マーカーカスタム反映版）
+        # 合体グラフの描画レイアウト
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         
@@ -443,7 +448,7 @@ if st.session_state.datasets:
                 ))
             merged_fig.layout[layout_key] = y_setup
 
-        # 系列の最終プロット（ユーザー指定の色・形を反映）
+        # 系列の最終プロット
         for idx in selected_indices:
             dataset = st.session_state.datasets[idx]
             df = dataset["df"]
@@ -457,7 +462,6 @@ if st.session_state.datasets:
                 user_y_grp = mapping_yaxis_grp[(idx, y_axis)]
                 target_yaxis = plotly_y_id_map[user_y_grp]
 
-                # 各データごとに保存されたカスタム色・カスタムシンボルを取得
                 color = cfg["colors"].get(y_axis, plotly_default_colors[y_loop_idx % len(plotly_default_colors)])
                 chosen_sym_text = cfg["symbols"].get(y_axis, "丸（●）")
                 plotly_symbol = symbol_map.get(chosen_sym_text, "circle")
@@ -471,7 +475,7 @@ if st.session_state.datasets:
                     
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
-                        marker=dict(color=color, opacity=0.3, size=7, symbol=plotly_symbol),
+                        marker=dict(color=color, opacity=0.3, size=8, symbol=plotly_symbol),
                         name=f"{display_label} (点)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
                     ))
@@ -483,7 +487,7 @@ if st.session_state.datasets:
                     ))
                 else:
                     line_config_merged = dict(color=color)
-                    marker_config_merged = dict(color=color, size=8, symbol=plotly_symbol)
+                    marker_config_merged = dict(color=color, size=9, symbol=plotly_symbol)
                     
                     if chosen_shape == "直線（全点結ぶ・マーカーあり）": m_mode = "lines+markers"
                     elif chosen_shape == "なめらかな曲線（全点結ぶ）": m_mode = "lines+markers"; line_config_merged["shape"] = "spline"
