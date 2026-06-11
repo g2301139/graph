@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (初期軸完全分離版)")
-st.write("合体した直後は、すべての軸が独立（データ1の軸数 ＋ データ2の軸数）して表示され、そこから選んだものだけを自由に統合できます。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (左・下軸集中配置版)")
+st.write("合体後に増えた軸は、縦軸ならすべて「左側」へ、横軸ならすべて「下側」へ順番に並ぶようにレイアウトを最適化しました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -257,11 +257,11 @@ if st.session_state.datasets:
                 st.plotly_chart(fig, use_container_width=True, key=f"single_chart_{idx}")
 
     # -----------------------------------------------------------------------------
-    # 3. グラフの合体セクション (初期状態完全バラバラ・指定型統合システム)
+    # 3. グラフの合体セクション (左・下 集中配置仕様)
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
-    st.write("チェックを入れたデータが合体します。**初期状態では全ての軸がバラバラ（独立）**に配置されています。同じグループ番号（1〜10）を指定した軸同士だけが統合されます。")
+    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。")
     
     selected_indices = []
     cb_cols = st.columns(max(1, len(st.session_state.datasets)))
@@ -271,24 +271,16 @@ if st.session_state.datasets:
                 selected_indices.append(idx)
 
     if len(selected_indices) >= 1:
-        # 系列（カラム）ごとに統合先グループを選べるように、すべての有効なX軸、Y軸をフラットにリストアップする
-        all_x_series = []
-        all_y_series = []
-        
-        # 選択肢用の配列
         grp_options = [f"グループ {i}" for i in range(1, 11)]
         
-        # 割り当て用UI
         st.markdown("### 🛠️ 軸グループの統合コントロール（ここで同じ番号を選ぶと統合されます）")
         
-        # 初期状態で完全にバラバラにするためのカウンタデフォルト値
         init_x_counter = 0
         init_y_counter = 0
         
-        mapping_xaxis_grp = {} # key: (idx, 'x') -> グループ番号(1~10)
-        mapping_yaxis_grp = {} # key: (idx, y_col) -> グループ番号(1~10)
+        mapping_xaxis_grp = {} 
+        mapping_yaxis_grp = {} 
 
-        # ユーザー設定UIの展開
         set_col1, set_col2 = st.columns(2)
         
         with set_col1:
@@ -321,13 +313,10 @@ if st.session_state.datasets:
                     g_num = int(re.search(r'\d+', chosen_y).group())
                     mapping_yaxis_grp[(idx, y_col)] = g_num
 
-        # 稼働しているグループ番号の抽出
         active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
         active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
 
-        # -------------------------------------------------------------------------
-        # ★ 統合状態の見える化表示（「データなんの何とデータなんの何を統合」）
-        # -------------------------------------------------------------------------
+        # 統合状態の見える化表示
         st.info("💡 **現在の軸グループ統合ステータス（同室一覧）**")
         status_cols = st.columns(2)
         with status_cols[0]:
@@ -342,9 +331,7 @@ if st.session_state.datasets:
                 members = [f"「{st.session_state.datasets[k[0]]['name']}」の [{k[1]}]" for k, g in mapping_yaxis_grp.items() if g == y_g]
                 st.markdown(f"* 🔗 **縦軸グループ {y_g}**: " + " ＋ ".join(members) + " を統合中")
 
-        # -------------------------------------------------------------------------
-        # ★ 合体グラフ側の軸名・最小値・最大値のカスタム編集フォーム
-        # -------------------------------------------------------------------------
+        # 軸名・範囲設定のカスタム
         st.markdown("---")
         st.subheader("✏️ 統合軸の詳細編集（軸名・範囲指定）")
         
@@ -355,7 +342,6 @@ if st.session_state.datasets:
         merged_y_mins = {}
         merged_y_maxs = {}
         
-        # 横軸カスタム
         st.markdown("##### 📐 横軸のカスタムエリア")
         x_input_cols = st.columns(max(1, len(active_x_grps)))
         for l_idx, x_grp_num in enumerate(active_x_grps):
@@ -369,7 +355,6 @@ if st.session_state.datasets:
                 with x_min_col: merged_x_mins[x_grp_num] = st.text_input(f"最小値", value="", key=f"m_min_x_{x_grp_num}")
                 with x_max_col: merged_x_maxs[x_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_x_{x_grp_num}")
 
-        # 縦軸カスタム
         st.markdown("##### 📐 縦軸のカスタムエリア")
         y_input_cols = st.columns(max(1, len(active_y_grps)))
         for l_idx, y_grp_num in enumerate(active_y_grps):
@@ -384,30 +369,41 @@ if st.session_state.datasets:
                 with y_max_col: merged_y_maxs[y_grp_num] = st.text_input(f"最大値", value="", key=f"m_max_y_{y_grp_num}")
 
         # -------------------------------------------------------------------------
-        # グラフ合成・描画処理
+        # ★ 左側・下側 集中レイアウトの動的計算ロジック
         # -------------------------------------------------------------------------
         merged_fig = go.Figure()
         color_cycle_merged = px.colors.qualitative.Plotly
         color_idx_merged = 0
         
-        right_y_count = len([a for a in active_y_grps if a > 1])
-        left_xaxis_domain = 0.055 * len([a for a in active_y_grps if a == 1])
-        left_xaxis_domain = max(0.12, left_xaxis_domain)
-        right_xaxis_domain = max(0.20, 1.0 - (right_y_count * 0.045))
+        # 軸数に応じて描画エリア（domain）の左端と下端を動的に削り、マージン（余白）を確保
+        offset_distance = 0.065 # 各軸の間隔
+        
+        total_left_y_axes = len(active_y_grps)
+        total_bottom_x_axes = len(active_x_grps)
+        
+        # 本文（プロット領域）の開始位置を計算
+        xaxis_domain_start = max(0.0, offset_distance * (total_left_y_axes - 1))
+        yaxis_domain_start = max(0.0, offset_distance * (total_bottom_x_axes - 1))
         
         merged_fig.update_layout(
             hovermode="closest",
-            margin=dict(l=20 + (len(active_y_grps)*35), r=20 + (right_y_count*50), t=60, b=40 + (len(active_x_grps)*35)),
+            # 全体の余白も軸数に合わせてゆったり自動調整
+            margin=dict(
+                l=50 + (total_left_y_axes * 40), 
+                r=40, 
+                t=60, 
+                b=50 + (total_bottom_x_axes * 30)
+            ),
         )
 
-        # 横軸レイアウトの構築
+        # 1. 横軸(X)レイアウトの構築 【すべて下側に並べる】
         plotly_x_id_map = {}
         for loop_idx, x_grp_num in enumerate(active_x_grps):
             layout_key = "xaxis" if loop_idx == 0 else f"xaxis{loop_idx + 1}"
             plotly_x_id_map[x_grp_num] = "x" if loop_idx == 0 else f"x{loop_idx + 1}"
             
             x_title_user = merged_x_titles.get(x_grp_num, f"横軸 {x_grp_num}")
-            x_setup = dict(title=x_title_user, tickformat="f")
+            x_setup = dict(title=x_title_user, tickformat="f", side="bottom")
             
             try:
                 mn = merged_x_mins.get(x_grp_num, "").strip()
@@ -418,30 +414,25 @@ if st.session_state.datasets:
             except ValueError: pass
 
             if loop_idx == 0:
-                x_setup.update(dict(side="bottom", domain=[left_xaxis_domain, right_xaxis_domain]))
+                # 基準となる最初のX軸
+                x_setup.update(dict(domain=[xaxis_domain_start, 1.0]))
             else:
-                side_pos = "top" if loop_idx % 2 == 1 else "bottom"
-                offset = (loop_idx // 2) * 0.07
+                # 2個目以降のX軸はさらに下にずらしていく
                 x_setup.update(dict(
-                    side=side_pos, overlaying="x", anchor="free",
-                    position=max(0.0, min(1.0, (0.0 - offset) if side_pos == "bottom" else (1.0 + offset)))
+                    overlaying="x", 
+                    anchor="free",
+                    position=max(0.0, yaxis_domain_start - (loop_idx * offset_distance))
                 ))
             merged_fig.layout[layout_key] = x_setup
 
-        # 縦軸レイアウトの構築
+        # 2. 縦軸(Y)レイアウトの構築 【すべて左側に並べる】
         plotly_y_id_map = {}
-        right_drawn_count = 0
         for loop_idx, y_grp_num in enumerate(active_y_grps):
-            if y_grp_num == 1:
-                layout_key = "yaxis"
-                plotly_y_id_map[y_grp_num] = "y"
-            else:
-                right_drawn_count += 1
-                layout_key = f"yaxis{right_drawn_count + 1}"
-                plotly_y_id_map[y_grp_num] = f"y{right_drawn_count + 1}"
+            layout_key = "yaxis" if loop_idx == 0 else f"yaxis{loop_idx + 1}"
+            plotly_y_id_map[y_grp_num] = "y" if loop_idx == 0 else f"y{loop_idx + 1}"
             
             y_title_user = merged_y_titles.get(y_grp_num, f"縦軸 {y_grp_num}")
-            y_setup = dict(title=y_title_user, tickformat="f")
+            y_setup = dict(title=y_title_user, tickformat="f", side="left")
             
             try:
                 mn = merged_y_mins.get(y_grp_num, "").strip()
@@ -451,12 +442,15 @@ if st.session_state.datasets:
                     y_setup["autorange"] = False
             except ValueError: pass
 
-            if y_grp_num == 1:
-                y_setup.update(dict(side="left", anchor="x"))
+            if loop_idx == 0:
+                # 基準となる最初のY軸
+                y_setup.update(dict(domain=[yaxis_domain_start, 1.0]))
             else:
+                # 2個目以降のY軸はさらに左にずらしていく
                 y_setup.update(dict(
-                    side="right", overlaying="y", anchor="free",
-                    position=min(1.0, 1.0 - (max(0, right_y_count - right_drawn_count) * 0.045))
+                    overlaying="y", 
+                    anchor="free",
+                    position=max(0.0, xaxis_domain_start - (loop_idx * offset_distance))
                 ))
             merged_fig.layout[layout_key] = y_setup
 
@@ -467,11 +461,9 @@ if st.session_state.datasets:
             cfg = configs.get(idx)
             if not cfg or not cfg["y_axes"]: continue
 
-            # 横軸はデータセット単位
             user_x_grp = mapping_xaxis_grp[idx]
             target_xaxis = plotly_x_id_map[user_x_grp]
 
-            # 縦軸は系列単位
             for y_axis in cfg["y_axes"]:
                 user_y_grp = mapping_yaxis_grp[(idx, y_axis)]
                 target_yaxis = plotly_y_id_map[user_y_grp]
@@ -512,7 +504,7 @@ if st.session_state.datasets:
                         xaxis=target_xaxis, yaxis=target_yaxis
                     ))
 
-        st.subheader("📉 完全独立・個別統合合体グラフ")
-        st.plotly_chart(merged_fig, use_container_width=True, height=700, key="final_flexible_max10_merged_chart")
+        st.subheader("📉 左・下集中配置型 合体グラフ")
+        st.plotly_chart(merged_fig, use_container_width=True, height=750, key="final_left_bottom_merged_chart")
 else:
     st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
