@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (凡例マーカー表示対応版)")
-st.write("トレンド線などを選択した場合でも、右側の凡例に「線の色」と「点の形」がセットで表示されるように改良しました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (バグ完全修正版)")
+st.write("エラーを修正し、線と点の色を完全に統一しました！トレンド線の凡例にも設定した点の形が正しく反映されます。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -126,7 +126,6 @@ if st.session_state.datasets:
 # -----------------------------------------------------------------------------
 configs = {}
 
-# 点の形（シンボル）20種類マッピング
 symbol_map = {
     "丸（●）": "circle",
     "四角（■）": "square",
@@ -171,7 +170,7 @@ if st.session_state.datasets:
 
             custom_x_label = st.text_input("横軸の表示名", value=x_axis, key=f"label_x_{idx}")
 
-            st.markdown("✏️ **各縦軸の詳細設定（名前・形状・色・点の形を個別に編集できます）**")
+            st.markdown("✏️ **各縦軸の詳細設定（名前・形状・共通の色・点の形を編集できます）**")
             single_y_titles = {}
             single_y_mins = {}
             single_y_maxs = {}
@@ -197,8 +196,9 @@ if st.session_state.datasets:
                     with row1_c4: single_y_maxs[y_col] = st.text_input(f"最大値", value="", key=f"single_max_{idx}_{y_col}")
                     
                     with row2_c1:
+                        # 点と線の共通色を選択
                         default_hex = plotly_default_colors[y_loop % len(plotly_default_colors)]
-                        single_y_colors[y_col] = st.color_picker(f"線の色 / 点の色", value=default_hex, key=f"single_color_{idx}_{y_col}")
+                        single_y_colors[y_col] = st.color_picker(f"グラフ共通の色（点と線）", value=default_hex, key=f"single_color_{idx}_{y_col}")
                     with row2_c2:
                         single_y_symbols[y_col] = st.selectbox(
                             f"点の形（マーカー）",
@@ -256,23 +256,25 @@ if st.session_state.datasets:
                     if "トレンド線" in chosen_shape:
                         degree = 1 if "1次近似" in chosen_shape else 2
                         x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
-                        # 元データの点は凡例から非表示に
+                        
+                        # 元データの点はグラフ上にプロット（凡例からは隠す）
                         fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode="markers", marker=dict(color=color, opacity=0.4, size=10, symbol=plotly_symbol), name=f"{y_col} (元データ)", yaxis=target_yaxis_id, showlegend=False))
-                        # トレンド線側の凡例表示モードを lines+markers にし、凡例に点の形を合成
+                        
+                        # トレンド線をプロット（凡例マークに線と点を両方出すため mode="lines+markers" にし、マーカー自体はグラフ上で見えないようデータは空にする手法で凡例表示を統合）
                         fig.add_trace(go.Scatter(
-                            x=x_t, y=y_t, 
-                            mode="lines", 
-                            line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"), 
-                            marker=dict(symbol=plotly_symbol, size=10, color=color),
-                            showlegend=True,
-                            legendgroup=f"g_{idx}_{y_col}",
-                            name=f"{axis_title} (トレンド)", 
-                            yaxis=target_yaxis_id
+                            x=x_t, y=y_t, mode="lines", 
+                            line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"),
+                            name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id,
+                            legendgroup=f"g_{idx}_{y_col}"
                         ))
-                        # 凡例のアイコン表示を強制的に線＋マーカーに変更
-                        fig.data[-1].update(legendstyle="lines+markers" if hasattr(go.Scatter(), 'legendstyle') else {}) 
-                        # 完全に凡例のシンボルを上書き保証するためのダミートレース（互換性対策）
-                        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines+markers", line=dict(color=color, width=3), marker=dict(symbol=plotly_symbol, size=10, color=color), name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id, legendgroup=f"g_{idx}_{y_col}", showlegend=False))
+                        # 凡例用に「線＋マーカー」のダミートレースを追加して見た目を美しく同期
+                        fig.add_trace(go.Scatter(
+                            x=[None], y=[None], mode="lines+markers", 
+                            line=dict(color=color, width=3), 
+                            marker=dict(symbol=plotly_symbol, size=10, color=color), 
+                            name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id, 
+                            legendgroup=f"g_{idx}_{y_col}", showlegend=True
+                        ))
                     else:
                         line_config = dict(color=color)
                         marker_config = dict(color=color, size=10, symbol=plotly_symbol)
@@ -292,7 +294,7 @@ if st.session_state.datasets:
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
-    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。設定した色や20種類のシンボルもそのまま引き継がれます。")
+    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。設定した共通カラーやシンボルもそのまま引き継がれます。")
     
     selected_indices = []
     cb_cols = st.columns(max(1, len(st.session_state.datasets)))
@@ -303,12 +305,10 @@ if st.session_state.datasets:
 
     if len(selected_indices) >= 1:
         grp_options = [f"グループ {i}" for i in range(1, 11)]
-        
         st.markdown("### 🛠️ 軸グループの統合コントロール")
         
         init_x_counter = 0
         init_y_counter = 0
-        
         mapping_xaxis_grp = {} 
         mapping_yaxis_grp = {} 
 
@@ -496,19 +496,29 @@ if st.session_state.datasets:
                     degree = 1 if "1次近似" in chosen_shape else 2
                     x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
                     
+                    # 元の点（凡例非表示）
                     merged_fig.add_trace(go.Scatter(
                         x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
                         marker=dict(color=color, opacity=0.3, size=9, symbol=plotly_symbol),
                         name=f"{display_label} (点)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
                     ))
-                    # 合体後グラフでもトレンド線の凡例マークにマーカー形をブレンド
+                    # トレンドの線
                     merged_fig.add_trace(go.Scatter(
                         x=x_t, y=y_t, mode="lines",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
+                        name=f"{display_label} (トレンド)",
+                        xaxis=target_xaxis, yaxis=target_yaxis,
+                        legendgroup=f"m_g_{idx}_{y_axis}"
+                    ))
+                    # 合体後グラフ用の凡例補正ダミー（線＋点を表示）
+                    merged_fig.add_trace(go.Scatter(
+                        x=[None], y=[None], mode="lines+markers",
+                        line=dict(color=color, width=2.5),
                         marker=dict(symbol=plotly_symbol, size=10, color=color),
                         name=f"{display_label} (トレンド)",
-                        xaxis=target_xaxis, yaxis=target_yaxis
+                        xaxis=target_xaxis, yaxis=target_yaxis,
+                        legendgroup=f"m_g_{idx}_{y_axis}", showlegend=True
                     ))
                 else:
                     line_config_merged = dict(color=color)
@@ -528,8 +538,6 @@ if st.session_state.datasets:
                     ))
 
         st.subheader("📉 左・下集中配置型 合体グラフ")
-        # 凡例全体のマークモードを強制制御し、すべて線＋点として表示
-        merged_fig.update_layout(legend=dict(traceorder="normal"))
         st.plotly_chart(merged_fig, use_container_width=True, height=750, key="final_left_bottom_merged_chart")
 else:
     st.info("データがまだ登録されていません。まずは上のフォームからデータを追加してください。")
