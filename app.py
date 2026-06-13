@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (バグ完全修正版)")
-st.write("エラーを修正し、線と点の色を完全に統一しました！トレンド線の凡例にも設定した点の形が正しく反映されます。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (表示・配色修正版)")
+st.write("不要な点を排除し、グラフ内の線と右側凡例の「色・点の形」を完全に一致させました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -196,7 +196,6 @@ if st.session_state.datasets:
                     with row1_c4: single_y_maxs[y_col] = st.text_input(f"最大値", value="", key=f"single_max_{idx}_{y_col}")
                     
                     with row2_c1:
-                        # 点と線の共通色を選択
                         default_hex = plotly_default_colors[y_loop % len(plotly_default_colors)]
                         single_y_colors[y_col] = st.color_picker(f"グラフ共通の色（点と線）", value=default_hex, key=f"single_color_{idx}_{y_col}")
                     with row2_c2:
@@ -257,23 +256,12 @@ if st.session_state.datasets:
                         degree = 1 if "1次近似" in chosen_shape else 2
                         x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
                         
-                        # 元データの点はグラフ上にプロット（凡例からは隠す）
-                        fig.add_trace(go.Scatter(x=df[x_axis], y=df[y_col], mode="markers", marker=dict(color=color, opacity=0.4, size=10, symbol=plotly_symbol), name=f"{y_col} (元データ)", yaxis=target_yaxis_id, showlegend=False))
-                        
-                        # トレンド線をプロット（凡例マークに線と点を両方出すため mode="lines+markers" にし、マーカー自体はグラフ上で見えないようデータは空にする手法で凡例表示を統合）
+                        # ただの元データ点は描画せず、トレンド曲線のみを描画（凡例には線と点をセットで出す）
                         fig.add_trace(go.Scatter(
-                            x=x_t, y=y_t, mode="lines", 
+                            x=x_t, y=y_t, mode="lines+markers", 
                             line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"),
-                            name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id,
-                            legendgroup=f"g_{idx}_{y_col}"
-                        ))
-                        # 凡例用に「線＋マーカー」のダミートレースを追加して見た目を美しく同期
-                        fig.add_trace(go.Scatter(
-                            x=[None], y=[None], mode="lines+markers", 
-                            line=dict(color=color, width=3), 
-                            marker=dict(symbol=plotly_symbol, size=10, color=color), 
-                            name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id, 
-                            legendgroup=f"g_{idx}_{y_col}", showlegend=True
+                            marker=dict(symbol=plotly_symbol, size=10, color=color, maxdisplayed=2), # グラフ上が線に見えるよう点数を抑える
+                            name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id, showlegend=True
                         ))
                     else:
                         line_config = dict(color=color)
@@ -294,7 +282,7 @@ if st.session_state.datasets:
     # -----------------------------------------------------------------------------
     st.markdown("---")
     st.header("3. 🔗 グラフの合体設定（初期状態はすべて個別の軸）")
-    st.write("チェックを入れたデータが合体します。追加された複数の軸は、**縦軸なら左側、横軸なら下側**へ自動で綺麗に整列します。設定した共通カラーやシンボルもそのまま引き継がれます。")
+    st.write("チェックを入れたデータが合体します。設定した共通カラーやシンボルもそのまま引き継がれます。")
     
     selected_indices = []
     cb_cols = st.columns(max(1, len(st.session_state.datasets)))
@@ -346,20 +334,6 @@ if st.session_state.datasets:
 
         active_x_grps = sorted(list(set(mapping_xaxis_grp.values())))
         active_y_grps = sorted(list(set(mapping_yaxis_grp.values())))
-
-        st.info("💡 **現在の軸グループ統合ステータス**")
-        status_cols = st.columns(2)
-        with status_cols[0]:
-            st.markdown("**【横軸(X)の統合詳細】**")
-            for x_g in active_x_grps:
-                members = [f"「{st.session_state.datasets[i]['name']}」の [{configs[i]['x_axis']}]" for i, g in mapping_xaxis_grp.items() if g == x_g]
-                st.markdown(f"* 🔗 **横軸グループ {x_g}**: " + " ＋ ".join(members))
-                
-        with status_cols[1]:
-            st.markdown("**【縦軸(Y)の統合詳細】**")
-            for y_g in active_y_grps:
-                members = [f"「{st.session_state.datasets[k[0]]['name']}」の [{k[1]}]" for k, g in mapping_yaxis_grp.items() if g == y_g]
-                st.markdown(f"* 🔗 **縦軸グループ {y_g}**: " + " ＋ ".join(members))
 
         st.markdown("---")
         st.subheader("✏️ 統合軸の詳細編集（軸名・範囲指定）")
@@ -496,29 +470,13 @@ if st.session_state.datasets:
                     degree = 1 if "1次近似" in chosen_shape else 2
                     x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
                     
-                    # 元の点（凡例非表示）
+                    # 合体後もただの点群は描画せず、トレンド線のみ。色・形も完全同期。
                     merged_fig.add_trace(go.Scatter(
-                        x=df[cfg["x_axis"]], y=df[y_axis], mode="markers",
-                        marker=dict(color=color, opacity=0.3, size=9, symbol=plotly_symbol),
-                        name=f"{display_label} (点)",
-                        xaxis=target_xaxis, yaxis=target_yaxis, showlegend=False
-                    ))
-                    # トレンドの線
-                    merged_fig.add_trace(go.Scatter(
-                        x=x_t, y=y_t, mode="lines",
+                        x=x_t, y=y_t, mode="lines+markers",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
+                        marker=dict(symbol=plotly_symbol, size=10, color=color, maxdisplayed=2),
                         name=f"{display_label} (トレンド)",
-                        xaxis=target_xaxis, yaxis=target_yaxis,
-                        legendgroup=f"m_g_{idx}_{y_axis}"
-                    ))
-                    # 合体後グラフ用の凡例補正ダミー（線＋点を表示）
-                    merged_fig.add_trace(go.Scatter(
-                        x=[None], y=[None], mode="lines+markers",
-                        line=dict(color=color, width=2.5),
-                        marker=dict(symbol=plotly_symbol, size=10, color=color),
-                        name=f"{display_label} (トレンド)",
-                        xaxis=target_xaxis, yaxis=target_yaxis,
-                        legendgroup=f"m_g_{idx}_{y_axis}", showlegend=True
+                        xaxis=target_xaxis, yaxis=target_yaxis, showlegend=True
                     ))
                 else:
                     line_config_merged = dict(color=color)
