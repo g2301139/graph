@@ -8,8 +8,8 @@ import re
 
 st.set_page_config(page_title="マルチデータ・万能グラフ作成アプリ", layout="wide")
 
-st.title("📊 高機能マルチグラフ作成Webアプリ (表示・配色修正版)")
-st.write("不要な点を排除し、グラフ内の線と右側凡例の「色・点の形」を完全に一致させました。")
+st.title("📊 高機能マルチグラフ作成Webアプリ (全点表示・配色完全一致版)")
+st.write("トレンド線上のすべてのデータポイント（点）を間引かずに全件表示し、色と形も完全に一致させました。")
 
 # -----------------------------------------------------------------------------
 # セッション状態（State）の初期化
@@ -32,8 +32,8 @@ if "input_buffer" not in st.session_state:
 if "input_name" not in st.session_state:
     st.session_state.input_name = f"データセット {len(st.session_state.datasets) + 1}"
 
-# トレンド線（近似曲線）を計算するヘルパー関数
-def calculate_trend_line(x_series, y_series, degree=1):
+# トレンド線（近似曲線）のY値を、元のX軸データポイントに合わせて計算するヘルパー関数
+def calculate_trend_points(x_series, y_series, degree=1):
     try:
         mask = ~np.isnan(x_series) & ~np.isnan(y_series)
         x_clean = x_series[mask].astype(float)
@@ -42,9 +42,9 @@ def calculate_trend_line(x_series, y_series, degree=1):
             return x_series, y_series
         z = np.polyfit(x_clean, y_clean, degree)
         p = np.poly1d(z)
-        x_trend = np.linspace(x_clean.min(), x_clean.max(), 100)
-        y_trend = p(x_trend)
-        return x_trend, y_trend
+        # 元のX軸データの順序を保ったまま、トレンド線上のY値を計算
+        y_trend = p(x_series.astype(float))
+        return x_series, y_trend
     except:
         return x_series, y_series
 
@@ -254,13 +254,14 @@ if st.session_state.datasets:
                     
                     if "トレンド線" in chosen_shape:
                         degree = 1 if "1次近似" in chosen_shape else 2
-                        x_t, y_t = calculate_trend_line(df[x_axis], df[y_col], degree=degree)
+                        # 元のデータ件数分、すべての点にトレンド値を計算
+                        x_t, y_t = calculate_trend_points(df[x_axis], df[y_col], degree=degree)
                         
-                        # ただの元データ点は描画せず、トレンド曲線のみを描画（凡例には線と点をセットで出す）
+                        # すべてのデータ点位置に、線と同じ色・指定の形で「lines+markers」を描画
                         fig.add_trace(go.Scatter(
                             x=x_t, y=y_t, mode="lines+markers", 
                             line=dict(color=color, width=3, shape="spline" if degree==2 else "linear"),
-                            marker=dict(symbol=plotly_symbol, size=10, color=color, maxdisplayed=2), # グラフ上が線に見えるよう点数を抑える
+                            marker=dict(symbol=plotly_symbol, size=10, color=color),
                             name=f"{axis_title} (トレンド)", yaxis=target_yaxis_id, showlegend=True
                         ))
                     else:
@@ -468,13 +469,13 @@ if st.session_state.datasets:
                 
                 if "トレンド線" in chosen_shape:
                     degree = 1 if "1次近似" in chosen_shape else 2
-                    x_t, y_t = calculate_trend_line(df[cfg["x_axis"]], df[y_axis], degree=degree)
+                    x_t, y_t = calculate_trend_points(df[cfg["x_axis"]], df[y_axis], degree=degree)
                     
-                    # 合体後もただの点群は描画せず、トレンド線のみ。色・形も完全同期。
+                    # 合体後もデータ件数を間引くことなくすべての点を表示
                     merged_fig.add_trace(go.Scatter(
                         x=x_t, y=y_t, mode="lines+markers",
                         line=dict(color=color, width=2.5, shape="spline" if degree==2 else "linear"),
-                        marker=dict(symbol=plotly_symbol, size=10, color=color, maxdisplayed=2),
+                        marker=dict(symbol=plotly_symbol, size=10, color=color),
                         name=f"{display_label} (トレンド)",
                         xaxis=target_xaxis, yaxis=target_yaxis, showlegend=True
                     ))
